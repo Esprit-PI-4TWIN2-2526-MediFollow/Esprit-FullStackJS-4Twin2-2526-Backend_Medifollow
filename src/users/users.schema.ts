@@ -6,21 +6,21 @@ export type UserDocument = User & Document;
 
 @Schema({ timestamps: true })
 export class User {
-    @Prop({ required: true, unique: true })
+  @Prop({ required: true, unique: true })
   nom: string;
   @Prop({ required: true, unique: true })
   prenom: string;
-@Prop({ required: true, unique: true })
+  @Prop({ required: true, unique: true })
   telephone: string;
-@Prop({ required: true, unique: true })
+  @Prop({ required: true, unique: true })
   adresse: string;
   @Prop({ required: true, unique: true })
   dateNaissance: Date;
-@Prop({ required: true, unique: true })
+  @Prop({ required: true, unique: true })
   sexe: string;
-@Prop({ required: true, unique: true })
+  @Prop({ required: true, unique: true })
   createdAt: Date;
-@Prop({ required: true, unique: true })
+  @Prop({ required: true, unique: true })
   updatedAt: Date;
   @Prop({ required: true, unique: true })
   actif: boolean;
