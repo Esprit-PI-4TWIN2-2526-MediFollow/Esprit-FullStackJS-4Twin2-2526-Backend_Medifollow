@@ -20,3 +20,11 @@ npm ls @nestjs/mongoose mongoose @nestjs/core
 nest g module users
 nest g controller users
 nest g service users
+
+
+//commande yahya
+npm install typeorm reflect-metadata
+npm i mongodb@^6
+npm i typeorm mongodb @nestjs/typeorm reflect-metadata class-validator class-transformer
+npm i class-validator class-transformer
+npm i typeorm reflect-metadata --legacy-peer-deps //ken 3andek error fel typeorm
