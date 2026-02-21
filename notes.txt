@@ -1,0 +1,22 @@
+create project 
+ + npm i -g @nestjs/cli
+ + nest new backend-medifollow
+
+---> npm run lint
+---> npm run format
+
+install config module for file .env 
+ + npm install @nestjs/config
+
+install mongoose : (mongobd)
+ + npm i @nestjs/mongoose mongoose
+
+npm ls @nestjs/mongoose mongoose @nestjs/core
+
+
+
+
+
+nest g module users
+nest g controller users
+nest g service users
