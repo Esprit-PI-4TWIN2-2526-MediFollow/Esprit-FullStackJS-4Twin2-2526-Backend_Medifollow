@@ -36,3 +36,6 @@ npm i typeorm reflect-metadata --legacy-peer-deps //ken 3andek error fel typeorm
  git commit -m "schema users"
  git branch -M signup
  git push -u origin signup
+
+ /*pour hasher le mdp il faut installer*/
+ npm install bcryptjs

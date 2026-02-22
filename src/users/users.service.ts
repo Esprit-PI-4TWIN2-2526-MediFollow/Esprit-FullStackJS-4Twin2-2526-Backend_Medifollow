@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
 import { User, UserDocument } from './users.schema';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
@@ -10,6 +11,12 @@ export class UsersService {
   // create user
   async create(user: Partial<User>): Promise<UserDocument> {
     const createdAt = new Date();
+    if (user.password) {
+      const saltRounds = 10;
+      const hashed = await bcrypt.hash(user.password as string, saltRounds);
+      user = { ...user, password: hashed };
+    }
+
     const created = new this.userModel({ ...user, createdAt });
     return created.save();
   }
@@ -34,6 +41,12 @@ export class UsersService {
   async update(id: string, user: Partial<User>) {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid MongoDB id');
+    }
+
+    if (user.password) {
+      const saltRounds = 10;
+      const hashed = await bcrypt.hash(user.password as string, saltRounds);
+      user = { ...user, password: hashed };
     }
 
     const updated = await this.userModel
