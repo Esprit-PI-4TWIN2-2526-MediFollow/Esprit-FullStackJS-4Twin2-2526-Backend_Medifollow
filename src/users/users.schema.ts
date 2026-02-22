@@ -18,9 +18,9 @@ export class User {
   dateNaissance: Date;
 @Prop({ required: true})
   sexe: string;
-@Prop({ required: true })
+@Prop()
   createdAt: Date;
-@Prop({ required: true })
+@Prop()
   updatedAt: Date;
   @Prop({ required: true })
   actif: boolean;
@@ -49,8 +49,7 @@ resetPasswordExpires: Date;
   @Prop({ required: true })
   password: string;
 
-  @Prop()
-  name: string;
+  
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
