@@ -28,3 +28,11 @@ npm i mongodb@^6
 npm i typeorm mongodb @nestjs/typeorm reflect-metadata class-validator class-transformer
 npm i class-validator class-transformer
 npm i typeorm reflect-metadata --legacy-peer-deps //ken 3andek error fel typeorm
+
+//commandes Nour
+/* push sur git*/
+ git init
+ git add .
+ git commit -m "schema users"
+ git branch -M signup
+ git push -u origin signup
