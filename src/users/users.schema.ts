@@ -1,46 +1,45 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { Role } from 'src/role/schemas/role.schema';
 
 export type UserDocument = User & Document;
 
 @Schema({ timestamps: true })
 export class User {
-    @Prop({ required: true, unique: true })
+    @Prop({ required: true })
   nom: string;
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true})
   prenom: string;
-@Prop({ required: true, unique: true })
+@Prop({ required: true})
   telephone: string;
-@Prop({ required: true, unique: true })
+@Prop({ required: true })
   adresse: string;
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   dateNaissance: Date;
-@Prop({ required: true, unique: true })
+@Prop({ required: true})
   sexe: string;
-@Prop({ required: true, unique: true })
+@Prop({ required: true })
   createdAt: Date;
-@Prop({ required: true, unique: true })
+@Prop({ required: true })
   updatedAt: Date;
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   actif: boolean;
-  @Prop({ required: false, unique: false })
+  @Prop({ required: false})
   specialite: string;
 
-  @Prop({ required: false, unique: false })
+  @Prop({ required: false })
   diplome: string;
 
-  @Prop({ required: false, unique: false })
+  @Prop({ required: false })
   grade: string;
 
-  @Prop({ required: true, unique: true })
+  @Prop({ type: Types.ObjectId, ref: Role.name, required: true })
   role: Role;
+  @Prop()
+resetPasswordToken: string;
 
-
-
-
-
-
+@Prop()
+resetPasswordExpires: Date;
 
 
 
