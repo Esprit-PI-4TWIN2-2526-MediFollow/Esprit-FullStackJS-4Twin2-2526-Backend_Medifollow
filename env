@@ -1,0 +1,10 @@
+NODE_ENV=development
+MONGODB_URI=mongodb+srv://syrinebh05_db_medifollow:d6bKsT2FICOZba2J@cluster0.gnk5ior.mongodb.net/db_medifollow?retryWrites=true&w=majority
+MONGODB_NAME=db_medifollow
+
+JWT_SECRET=super_secret_key
+EMAIL_HOST=smtp.example.com
+
+
+
+
