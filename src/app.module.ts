@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from './users/users.module';
 import { RoleModule } from './role/role.module';
+import { AuthModule } from './users/auth/auth.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -22,6 +23,7 @@ import { RoleModule } from './role/role.module';
       inject: [ConfigService],
     }),
     UsersModule,
+    AuthModule,
     RoleModule,
   ],
   controllers: [AppController],
