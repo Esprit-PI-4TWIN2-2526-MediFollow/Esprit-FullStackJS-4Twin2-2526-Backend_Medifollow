@@ -5,6 +5,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from './users/users.module';
 import { RoleModule } from './role/role.module';
+import { AuthModule } from './users/auth/auth.module';
+import { SecurityMiddleware } from './middleware/security.middleware';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -17,7 +19,7 @@ import { RoleModule } from './role/role.module';
       useFactory: (config: ConfigService) => ({
         uri: config.get<string>('MONGODB_URI'),
         dbName: config.get<string>('MONGODB_NAME'),
-             
+
       }),
       inject: [ConfigService],
     }),

@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import {HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 
 import { Role } from 'src/role/schemas/role.schema';
 
@@ -39,6 +39,11 @@ export class User {
 
   @Prop({ required: false })
   grade: string;
+
+  @Prop({ required: true, unique: true })
+  email: string;
+  @Prop({ required: true })
+  password: string;
 
   @Prop({ type: Types.ObjectId, ref: Role.name, required: true })
   role: Role;
