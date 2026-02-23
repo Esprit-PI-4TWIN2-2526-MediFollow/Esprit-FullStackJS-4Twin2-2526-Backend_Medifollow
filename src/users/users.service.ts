@@ -8,7 +8,7 @@ import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
-    @InjectModel(User.name) private userModel: Model<UserDocument>
+  @InjectModel(User.name) private userModel: Model<UserDocument>
 
   // create user
   async create(user: Partial<User>): Promise<UserDocument> {
@@ -70,16 +70,33 @@ export class UsersService {
 
     return this.userModel.findByIdAndDelete(id).exec();
   }
-     /*  async create(userData: Partial<User>): Promise<UserDocument> {
-        const user = new this.userModel(userData);
-        return user.save();
-    } */
+  /*  async create(userData: Partial<User>): Promise<UserDocument> {
+     const user = new this.userModel(userData);
+     return user.save();
+ } */
 
-//     async findByEmail(email: string): Promise<UserDocument | null> {
-//   return this.userModel.findOne({ email }).exec();
-async findByEmail(email: string) {
-  return this.userModel.findOne({ email }).populate('role').exec();
-}
+  //     async findByEmail(email: string): Promise<UserDocument | null> {
+  //   return this.userModel.findOne({ email }).exec();
+  async findByEmail(email: string) {
+    return this.userModel.findOne({ email }).populate('role').exec();
+  }
+  async updateUserRole(userId: string, roleId: string) {
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { role: roleId },
+      { new: true },
+    ).populate('role');
+  }
+
+  async setActiveStatus(userId: string, status: boolean) {
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { actif: status },
+      { new: true }
+    );
+  }
+
+
 }
 
 

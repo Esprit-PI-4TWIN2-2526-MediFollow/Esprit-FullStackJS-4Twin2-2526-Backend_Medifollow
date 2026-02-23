@@ -1,10 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { User } from './users.schema';
+import { Roles } from 'src/role/decorator/role.decorator';
 
-@Controller('users')
+@Controller('api')
+//@UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
-    constructor(private readonly usersService: UsersService) {}
+    constructor(private readonly usersService: UsersService) { }
 
     // create user
     @Post('/signup')
@@ -13,18 +15,18 @@ export class UsersController {
     }
 
     // get all users
-    @Get('/all')
+    @Get('/users/all')
     findAll() {
         return this.usersService.findAll();
     }
     // get user by id
-    @Get('/getById/:id')
+    @Get('/users/:id')
     findOne(@Param('id') id: string) {
         return this.usersService.findOne(id);
     }
 
     // update user
-    @Put('/update/:id')
+    @Put('/users/update/:id')
     update(@Param('id') id: string, @Body() user: Partial<User>) {
         return this.usersService.update(id, user);
     }
@@ -33,4 +35,25 @@ export class UsersController {
     delete(@Param('id') id: string) {
         return this.usersService.delete(id);
     }
+
+    // assign user role
+    @Patch(':id/role')
+    updateRole(
+        @Param('id') id: string,
+        @Body('roleId') roleId: string,
+    ) {
+        return this.usersService.updateUserRole(id, roleId);
+    }
+
+    //activate/deactivate user
+    @Patch(':id/status')
+    //@Roles('Admin', 'SuperAdmin')
+    setStatus(
+        @Param('id') id: string,
+        @Body('actif') actif: boolean,
+    ) {
+        return this.usersService.setActiveStatus(id, actif);
+    }
+
+
 }
