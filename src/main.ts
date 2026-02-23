@@ -8,6 +8,10 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe());
 
+  app.enableCors({
+    origin: 'http://localhost:4200',
+  });
+
   // Limiter les tentatives de connexion pour prévenir les attaques par force brute
   app.use(
     '/auth/signin',
@@ -18,9 +22,6 @@ async function bootstrap() {
       standardHeaders: true,
       legacyHeaders: false,
     }),
-    app.enableCors({
-    origin: 'http://localhost:4200',
-  })
   );
 
   await app.listen(3000);
