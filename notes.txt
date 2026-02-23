@@ -41,3 +41,32 @@ npm i typeorm reflect-metadata --legacy-peer-deps //ken 3andek error fel typeorm
  git commit -m "schema users"
  git branch -M signup
  git push -u origin signup
+
+
+//Commande Merge Ma branche --> Main
+
+# Te placer sur main
+git checkout main
+
+# Mettre main à jour
+git pull origin main
+
+# Fusionner ta branche
+git merge ta_branche
+// NB !! : vérifier GitHUb desktop pour visualiser les erreurs afin de les acceptés 
+
+# Pousser vers GitHub
+git push origin main
+
+
+// Commande Merge Main --> ta branche 
+# Te placer sur ta branche
+git checkout ta_branche
+
+# Mettre à jour main depuis GitHub
+git fetch origin
+
+# Fusionner main dans ta branche
+git merge origin/main
+
+git push origin ta_branche
