@@ -18,7 +18,11 @@ async function bootstrap() {
       standardHeaders: true,
       legacyHeaders: false,
     }),
+    app.enableCors({
+    origin: 'http://localhost:4200',
+  })
   );
+
   await app.listen(3000);
 }
 bootstrap();
