@@ -1,11 +1,10 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from './users/users.module';
 import { RoleModule } from './role/role.module';
-
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -23,9 +22,16 @@ import { RoleModule } from './role/role.module';
       inject: [ConfigService],
     }),
     UsersModule,
+    AuthModule,
     RoleModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(SecurityMiddleware)
+      .forRoutes('*');
+  }
+}
