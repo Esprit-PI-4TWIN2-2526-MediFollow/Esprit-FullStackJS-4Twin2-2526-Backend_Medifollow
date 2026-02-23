@@ -88,6 +88,15 @@ export class UsersService {
     ).populate('role');
   }
 
+  async setActiveStatus(userId: string, status: boolean) {
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { actif: status },
+      { new: true }
+    );
+  }
+
+
 }
 
 
