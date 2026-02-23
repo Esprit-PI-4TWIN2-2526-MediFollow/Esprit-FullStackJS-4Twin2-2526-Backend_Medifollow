@@ -18,7 +18,7 @@ export class User {
 @Prop({ required: true })
 
   adresse: string;
-  @Prop({ required: true })
+  @Prop({ required: false })
   dateNaissance: Date;
 
 @Prop({ required: true})
