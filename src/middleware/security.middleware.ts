@@ -13,7 +13,7 @@ export class SecurityMiddleware implements NestMiddleware {
     res.setHeader('Referrer-Policy', 'no-referrer');
 
     // Optionnel : vérifier présence du header Authorization
-    if (!req.headers.authorization && !req.originalUrl.startsWith('/auth')) {
+    if (!req.headers.authorization && !req.originalUrl.startsWith('/api')) {
       console.warn(`Requête sans Authorization vers ${req.originalUrl}`);
     }
 

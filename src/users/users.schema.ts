@@ -19,17 +19,17 @@ export class User {
   @Prop({ required: true })
 
   adresse: string;
-  @Prop({ required: true })
+  @Prop({ required: false })
   dateNaissance: Date;
 
   @Prop({ required: true })
   sexe: string;
   @Prop({ required: true })
   createdAt: Date;
-  @Prop({ required: true })
+  @Prop({ required: false })
 
   updatedAt: Date;
-  @Prop({ required: true })
+  @Prop({ required: false, default: true })
   actif: boolean;
   @Prop({ required: false })
   specialite: string;

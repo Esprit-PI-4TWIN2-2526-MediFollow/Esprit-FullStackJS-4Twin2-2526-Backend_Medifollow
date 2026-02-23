@@ -12,7 +12,7 @@ export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
   @Post()
-  @Roles('superadmin')
+  @Roles('superadmin', 'admin')
   create(@Body() dto: CreateRoleDto) {
     return this.roleService.create(dto);
   }
