@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, isValidObjectId } from 'mongoose';
+import { HydratedDocument, Model, isValidObjectId } from 'mongoose';
 import { User, UserDocument } from './users.schema';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  constructor(@InjectModel(User.name) private userModel: Model<HydratedDocument<User>   >) {}
 
   // create user
   async create(user: Partial<User>): Promise<UserDocument> {
