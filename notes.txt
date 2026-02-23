@@ -1,25 +1,30 @@
-create project 
- + npm i -g @nestjs/cli
- + nest new backend-medifollow
+# Init project 
+npm i -g @nestjs/cli
+nest new backend-medifollow
 
 ---> npm run lint
 ---> npm run format
 
-install config module for file .env 
- + npm install @nestjs/config
+# Install config module for file .env 
+npm install @nestjs/config
 
-install mongoose : (mongobd)
- + npm i @nestjs/mongoose mongoose
-
+# Install mongoose : (mongobd)
+npm i @nestjs/mongoose mongoose
 npm ls @nestjs/mongoose mongoose @nestjs/core
 
+# Auth JWT + Passport
+npm install @nestjs/jwt passport-jwt @nestjs/passport passport
 
+# Hash des mots de passe
+npm install bcryptjs
+npm install --save-dev @types/bcrypt
+// securite : k yekteb mot de passe ghalet  b @IP kadeh men marra yetkass alih mel main.ts w temchi tetbloca accès f authservice
+npm i express-rate-limit
 
-
-
-nest g module users
-nest g controller users
-nest g service users
+"NB ‼ :
+Middleware = portique d’entrée (log, headers, contrôle basique)
+JwtAuthGuard = carte d’identité (token valide ?)
+RolesGuard = agent de sécurité (role correct ?)"
 
 
 //commande yahya
@@ -38,11 +43,34 @@ npm i typeorm reflect-metadata --legacy-peer-deps //ken 3andek error fel typeorm
  git push -u origin signup
 
 
-
-
-
-
-
-
  #Khalil forgetpassword
 npm install nodemailer bcrypt
+
+//Commande Merge Ma branche --> Main
+
+# Te placer sur main
+git checkout main
+
+# Mettre main à jour
+git pull origin main
+
+# Fusionner ta branche
+git merge ta_branche
+// NB !! : vérifier GitHUb desktop pour visualiser les erreurs afin de les acceptés 
+
+# Pousser vers GitHub
+git push origin main
+
+
+// Commande Merge Main --> ta branche 
+# Te placer sur ta branche
+git checkout ta_branche
+
+# Mettre à jour main depuis GitHub
+git fetch origin
+
+# Fusionner main dans ta branche
+git merge origin/main
+
+git push origin ta_branche
+
