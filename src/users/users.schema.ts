@@ -32,10 +32,10 @@ export class User {
   @Prop({ required: false, default: true })
   actif: boolean;
   @Prop({ required: false })
-  specialite: string;
+  specialization: string;
 
   @Prop({ required: false })
-  diplome: string;
+  diploma: string;
 
   @Prop({ required: false })
   grade: string;
