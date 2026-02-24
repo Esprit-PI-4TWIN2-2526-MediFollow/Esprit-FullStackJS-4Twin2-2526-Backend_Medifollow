@@ -10,26 +10,26 @@ export class User {
 
   @Prop({ required: true })
 
-  nom: string;
+  firstName: string;
   @Prop({ required: true })
-  prenom: string;
+  lastName: string;
 
   @Prop({ required: true })
-  telephone: string;
+  phoneNumber: string;
   @Prop({ required: true })
 
-  adresse: string;
+  address: string;
   @Prop({ required: false })
-  dateNaissance: Date;
+  dateOfBirth: Date;
 
   @Prop({ required: true })
   sexe: string;
 
   @Prop({ required: false })
-  specialite: string;
+  specialization: string;
 
   @Prop({ required: false })
-  diplome: string;
+  diploma: string;
 
   @Prop({ required: false })
   grade: string;
