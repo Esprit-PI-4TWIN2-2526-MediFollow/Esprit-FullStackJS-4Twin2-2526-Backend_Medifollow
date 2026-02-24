@@ -6,10 +6,10 @@ import { JwtAuthGuard } from 'src/users/auth/jwt.guard';
 import { RolesGuard } from './guard/role.guard';
 import { Roles } from './decorator/role.decorator';
 
-@Controller('roles')
-@UseGuards(JwtAuthGuard, RolesGuard) 
+@Controller('api')
+//@UseGuards(JwtAuthGuard, RolesGuard)
 export class RoleController {
-  constructor(private readonly roleService: RoleService) {}
+  constructor(private readonly roleService: RoleService) { }
 
   @Post()
   @Roles('superadmin', 'admin')
@@ -17,25 +17,24 @@ export class RoleController {
     return this.roleService.create(dto);
   }
 
-  @Get()
-  @Roles('superadmin')
+  @Get('/roles')
   findAll() {
     return this.roleService.findAll();
   }
 
-  @Get(':id')
+  @Get('/users/:id')
   @Roles('superadmin')
   findOne(@Param('id') id: string) {
     return this.roleService.findOne(id);
   }
 
-  @Put(':id')
+  @Put('/users/update/:id')
   @Roles('superadmin')
   update(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
     return this.roleService.update(id, dto);
   }
 
-  @Delete(':id')
+  @Delete('/users/:id')
   @Roles('superadmin')
   remove(@Param('id') id: string) {
     return this.roleService.remove(id);
