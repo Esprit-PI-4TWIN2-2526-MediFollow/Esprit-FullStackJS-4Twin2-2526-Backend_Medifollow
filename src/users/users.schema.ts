@@ -33,6 +33,17 @@ export class User {
 
   @Prop({ required: false })
   grade: string;
+   @Prop({ required: false })
+  yearsOfExperience: number;
+   @Prop({ required: false })
+  assignedDepartment: string;
+   @Prop({ required: false })
+  auditScope: string;
+   @Prop({ required: false })
+  profileImageName: string;
+   @Prop({ required: false })
+  primaryDoctor: string;
+
 
   @Prop({ required: true, unique: true })
   email: string;
