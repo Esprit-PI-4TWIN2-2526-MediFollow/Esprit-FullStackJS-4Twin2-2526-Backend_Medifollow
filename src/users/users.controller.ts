@@ -3,8 +3,10 @@ import { UsersService } from './users.service';
 import { User } from './users.schema';
 import { Roles } from 'src/role/decorator/role.decorator';
 
+
 @Controller('api')
 //@UseGuards(JwtAuthGuard, RolesGuard)
+
 export class UsersController {
     constructor(private readonly usersService: UsersService) { }
 
