@@ -8,21 +8,21 @@ export type UserDocument = User & HydratedDocument<User>;
 @Schema({ timestamps: true })
 export class User {
 
-  @Prop({ required: true })
+  @Prop({ required: false })
 
   firstName: string;
-  @Prop({ required: true })
+  @Prop({ required: false })
   lastName: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   phoneNumber: string;
-  @Prop({ required: true })
+  @Prop({ required: false })
 
   address: string;
   @Prop({ required: false })
   dateOfBirth: Date;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   sexe: string;
 
   @Prop({ required: false })
