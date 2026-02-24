@@ -12,17 +12,19 @@ export class RoleService {
   ) {}
 
   async create(dto: CreateRoleDto) {
-    try {
-      const role = await this.roleModel.create({ name: dto.name.trim() });
-      return { message: 'Role created', data: role };
-    } catch (e: any) {
-      // duplicate key (unique)
-      if (e?.code === 11000) {
-        throw new BadRequestException('Role name already exists');
-      }
-      throw e;
+  const name = (dto.name || '').trim();
+  if (!name) throw new BadRequestException('Role name is required');
+
+  try {
+    const role = await this.roleModel.create({ name });
+    return { message: 'Role created', data: role };
+  } catch (e: any) {
+    if (e?.code === 11000) {
+      throw new BadRequestException('Role name already exists');
     }
+    throw e;
   }
+}
 
   async findAll() {
     const roles = await this.roleModel.find().sort({ createdAt: -1 });
@@ -39,24 +41,27 @@ export class RoleService {
   }
 
   async update(id: string, dto: UpdateRoleDto) {
-    if (!isValidObjectId(id)) throw new BadRequestException('Invalid id');
+  if (!isValidObjectId(id)) throw new BadRequestException('Invalid id');
 
-    try {
-      const updated = await this.roleModel.findByIdAndUpdate(
-        id,
-        { ...(dto.name ? { name: dto.name.trim() } : {}) },
-        { new: true },
-      );
+  const name = dto.name ? dto.name.trim() : undefined;
+  if (dto.name && !name) throw new BadRequestException('Role name is required');
 
-      if (!updated) throw new NotFoundException('Role not found');
-      return { message: 'Role updated', data: updated };
-    } catch (e: any) {
-      if (e?.code === 11000) {
-        throw new BadRequestException('Role name already exists');
-      }
-      throw e;
+  try {
+    const updated = await this.roleModel.findByIdAndUpdate(
+      id,
+      { ...(name ? { name } : {}) },
+      { new: true },
+    );
+
+    if (!updated) throw new NotFoundException('Role not found');
+    return { message: 'Role updated', data: updated };
+  } catch (e: any) {
+    if (e?.code === 11000) {
+      throw new BadRequestException('Role name already exists');
     }
+    throw e;
   }
+}
 
   async remove(id: string) {
     if (!isValidObjectId(id)) throw new BadRequestException('Invalid id');
