@@ -4,11 +4,13 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { HydratedDocument, Model, isValidObjectId } from 'mongoose';
 import { User, UserDocument } from './users.schema';
+import { Role, RoleDocument } from 'src/role/schemas/role.schema';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
-  @InjectModel(User.name) private userModel: Model<UserDocument>
+  @InjectModel(User.name) private userModel: Model<UserDocument>;
+  @InjectModel(Role.name) private roleModel: Model<RoleDocument>;
 
   // create user
   async create(user: Partial<User>): Promise<UserDocument> {
@@ -78,14 +80,53 @@ export class UsersService {
   //     async findByEmail(email: string): Promise<UserDocument | null> {
   //   return this.userModel.findOne({ email }).exec();
   async findByEmail(email: string) {
-    return this.userModel.findOne({ email }).populate('role').exec();
+    try {
+      return await this.userModel.findOne({ email }).populate('role').exec();
+    } catch (error: any) {
+      // Legacy data can contain non-ObjectId role values; avoid signin crash.
+      if (error?.name === 'CastError') {
+        return this.userModel.findOne({ email }).exec();
+      }
+      throw error;
+    }
   }
-  async updateUserRole(userId: string, roleId: string) {
+  async updateUserRole(userId: string, roleIdOrName: string) {
+    if (!userId || !isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid MongoDB user id');
+    }
+
+    const roleId = await this.resolveRoleId(roleIdOrName);
+
     return this.userModel.findByIdAndUpdate(
       userId,
       { role: roleId },
       { new: true },
     ).populate('role');
+  }
+
+  private async resolveRoleId(roleIdOrName: string): Promise<string> {
+    if (!roleIdOrName || !roleIdOrName.trim()) {
+      throw new BadRequestException('roleId is required');
+    }
+
+    const value = roleIdOrName.trim();
+    if (isValidObjectId(value)) {
+      const role = await this.roleModel.findById(value).select('_id').lean();
+      if (!role) throw new NotFoundException('Role not found');
+      return value;
+    }
+
+    const roleByName = await this.roleModel
+      .findOne({ name: { $regex: `^${value}$`, $options: 'i' } })
+      .select('_id')
+      .lean();
+    if (!roleByName) {
+      throw new BadRequestException(
+        'Invalid role value. Provide a role id or existing role name.',
+      );
+    }
+
+    return roleByName._id.toString();
   }
 
   async setActiveStatus(userId: string, status: boolean) {
