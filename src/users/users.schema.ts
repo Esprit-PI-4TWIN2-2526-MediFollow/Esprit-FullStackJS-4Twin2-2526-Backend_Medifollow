@@ -39,8 +39,12 @@ export class User {
   assignedDepartment: string;
    @Prop({ required: false })
   auditScope: string;
+
    @Prop({ required: false })
   profileImageName: string;
+
+  @Prop({ default: null })
+  avatarUrl: string; // URL genere par Cloudinary qui sera stockée dans MongoDB
    @Prop({ required: false })
   primaryDoctor: string;
 

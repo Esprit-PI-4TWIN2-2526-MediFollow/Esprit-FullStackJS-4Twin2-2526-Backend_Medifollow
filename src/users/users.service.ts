@@ -6,14 +6,35 @@ import { HydratedDocument, Model, isValidObjectId } from 'mongoose';
 import { User, UserDocument } from './users.schema';
 import { Role, RoleDocument } from 'src/role/schemas/role.schema';
 import * as bcrypt from 'bcryptjs';
+import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 
 @Injectable()
 export class UsersService {
-  @InjectModel(User.name) private userModel: Model<UserDocument>;
-  @InjectModel(Role.name) private roleModel: Model<RoleDocument>;
 
-  // create user
-  async create(user: Partial<User>): Promise<UserDocument> {
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(Role.name) private roleModel: Model<RoleDocument>,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
+  // create user avec image
+  async create(user: Partial<User>, avatar?: Express.Multer.File): Promise<UserDocument> {
+    const createdAt = new Date();
+
+    if (user.password) {
+      const hashed = await bcrypt.hash(user.password as string, 10);
+      user = { ...user, password: hashed };
+    }
+
+    // Upload avatar si fourni
+    if (avatar) {
+      const avatarUrl = await this.cloudinaryService.uploadImage(avatar);
+      user = { ...user, avatarUrl }; // 👈 stocker l'URL
+    }
+
+    const created = new this.userModel({ ...user, createdAt });
+    return created.save();
+  }
+  /* async create(user: Partial<User>): Promise<UserDocument> {
     const createdAt = new Date();
     if (user.password) {
       const saltRounds = 10;
@@ -23,7 +44,7 @@ export class UsersService {
 
     const created = new this.userModel({ ...user, createdAt });
     return created.save();
-  }
+  } */
 
   // get all users
   async findAll(): Promise<UserDocument[]> {
@@ -42,7 +63,30 @@ export class UsersService {
   }
 
   // update user
-  async update(id: string, user: Partial<User>) {
+  async update(id: string, user: Partial<User>, avatar?: Express.Multer.File) {
+    if (!id || !isValidObjectId(id)) {
+      throw new BadRequestException('Invalid MongoDB id');
+    }
+
+    if (user.password) {
+      const hashed = await bcrypt.hash(user.password as string, 10);
+      user = { ...user, password: hashed };
+    }
+
+    // Upload nouvel avatar si fourni
+    if (avatar) {
+      const avatarUrl = await this.cloudinaryService.uploadImage(avatar);
+      user = { ...user, avatarUrl }; // mettre à jour l'URL de l'avatar
+    }
+
+    const updated = await this.userModel
+      .findOneAndUpdate({ _id: id, actif: true } as any, user as any, { new: true })
+      .exec();
+
+    if (!updated) throw new NotFoundException('User introuvable');
+    return updated;
+  }
+  /* sync update(id: string, user: Partial<User>) {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid MongoDB id');
     }
@@ -59,7 +103,7 @@ export class UsersService {
 
     if (!updated) throw new NotFoundException('User introuvable');
     return updated;
-  }
+  } */
 
   // delete user
   async delete(id: string) {

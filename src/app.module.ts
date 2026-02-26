@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { RoleModule } from './role/role.module';
 import { AuthModule } from './users/auth/auth.module';
 import { SecurityMiddleware } from './middleware/security.middleware';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -27,6 +28,7 @@ import { SecurityMiddleware } from './middleware/security.middleware';
     UsersModule,
     AuthModule,
     RoleModule,
+    CloudinaryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -5,6 +5,7 @@ import { ForgetpasswordModule } from './forgetpassword/forgetpassword.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from './users.schema';
 import { Role, RoleSchema } from 'src/role/schemas/role.schema';
+import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { Role, RoleSchema } from 'src/role/schemas/role.schema';
       { name: User.name, schema: UserSchema },
       { name: Role.name, schema: RoleSchema },
     ]),
+    CloudinaryModule, // ✅ indispensable
     ForgetpasswordModule // ✅ indispensable
   ],
   controllers: [UsersController],
