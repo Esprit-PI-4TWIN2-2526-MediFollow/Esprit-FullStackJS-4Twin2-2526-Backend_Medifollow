@@ -76,6 +76,11 @@ export class AuthService {
                 id: user._id.toString(),
                 email: user.email,
                 role: roleValue,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                avatarUrl: user.avatarUrl,
+                phoneNumber: user.phoneNumber,
+                actif: user.actif,
             },
         };
     }

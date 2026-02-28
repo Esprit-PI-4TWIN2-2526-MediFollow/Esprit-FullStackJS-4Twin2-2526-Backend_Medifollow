@@ -73,6 +73,11 @@ export class User {
   @Prop({ required: false })
   updatedAt: Date;
 
+  @Prop({ type: [Number], required: false })
+  faceDescriptor: number[];
+
+  @Prop({ required: false })
+  faceImageUrl: string;
 
 }
 

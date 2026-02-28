@@ -8,6 +8,8 @@ import { RoleModule } from './role/role.module';
 import { AuthModule } from './users/auth/auth.module';
 import { SecurityMiddleware } from './middleware/security.middleware';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
+import { WebauthnModule } from './webauthn/webauthn.module';
+import { FaceRecognitionModule } from './face-recognition/face-recognition.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -29,6 +31,8 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module';
     AuthModule,
     RoleModule,
     CloudinaryModule,
+    WebauthnModule,
+    FaceRecognitionModule,
   ],
   controllers: [AppController],
   providers: [AppService],
