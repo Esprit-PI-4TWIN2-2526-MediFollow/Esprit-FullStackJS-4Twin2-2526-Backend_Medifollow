@@ -49,4 +49,23 @@ export class EmailService {
       html,
     });
   }
+
+   async sendStatusChangeEmail(to: string, status: boolean) {
+    const subject = status ? 'Account Activated' : 'Account Deactivated';
+    const html = `
+      <div style="font-family:Arial;padding:20px">
+        <h2>${subject}</h2>
+        <p>Hello,</p>
+        <p>Your account has been ${status ? 'activated' : 'deactivated'} by the administration.</p>
+        <p>Thank you.</p>
+      </div>
+    `;
+
+    await this.transporter.sendMail({
+      from: `"Medifollow" <${process.env.MAIL_USER}>`,
+      to,
+      subject,
+      html,
+    });
+  }
 }
