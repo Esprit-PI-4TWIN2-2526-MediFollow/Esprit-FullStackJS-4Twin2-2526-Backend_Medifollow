@@ -8,15 +8,20 @@ import { RoleModule } from './role/role.module';
 import { AuthModule } from './users/auth/auth.module';
 import { SecurityMiddleware } from './middleware/security.middleware';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { EmailModule } from './users/email/email.module';
 import { WebauthnModule } from './webauthn/webauthn.module';
 import { FaceRecognitionModule } from './face-recognition/face-recognition.module';
 @Module({
   imports: [
+
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
       
     }),
+      ScheduleModule.forRoot(),
+
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
@@ -29,6 +34,7 @@ import { FaceRecognitionModule } from './face-recognition/face-recognition.modul
     }),
     UsersModule,
     AuthModule,
+    EmailModule,
     RoleModule,
     CloudinaryModule,
     WebauthnModule,

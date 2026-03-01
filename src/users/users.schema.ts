@@ -33,19 +33,19 @@ export class User {
 
   @Prop({ required: false })
   grade: string;
-   @Prop({ required: false })
+  @Prop({ required: false })
   yearsOfExperience: number;
-   @Prop({ required: false })
+  @Prop({ required: false })
   assignedDepartment: string;
-   @Prop({ required: false })
+  @Prop({ required: false })
   auditScope: string;
 
-   @Prop({ required: false })
+  @Prop({ required: false })
   profileImageName: string;
 
   @Prop({ default: null })
   avatarUrl: string; // URL genere par Cloudinary qui sera stockée dans MongoDB
-   @Prop({ required: false })
+  @Prop({ required: false })
   primaryDoctor: string;
 
 
@@ -60,6 +60,21 @@ export class User {
 
   @Prop({ required: false, default: true })
   actif: boolean;
+
+  @Prop()
+  activationExpiresAt: Date;
+
+  @Prop()
+  reactivationCodeHash?: string;
+
+  @Prop()
+  reactivationCodeExpiresAt?: Date;
+
+  @Prop({ default: 0 })
+  reactivationAttempts?: number;
+
+  @Prop()
+  reactivationBlockedUntil?: Date;
 
   @Prop()
   resetPasswordToken: string;
