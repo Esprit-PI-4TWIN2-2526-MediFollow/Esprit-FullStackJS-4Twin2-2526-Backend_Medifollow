@@ -8,13 +8,18 @@ import { RoleModule } from './role/role.module';
 import { AuthModule } from './users/auth/auth.module';
 import { SecurityMiddleware } from './middleware/security.middleware';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { EmailModule } from './users/email/email.module';
 @Module({
   imports: [
+
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
       
     }),
+      ScheduleModule.forRoot(),
+
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
@@ -27,6 +32,7 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module';
     }),
     UsersModule,
     AuthModule,
+    EmailModule,
     RoleModule,
     CloudinaryModule,
   ],

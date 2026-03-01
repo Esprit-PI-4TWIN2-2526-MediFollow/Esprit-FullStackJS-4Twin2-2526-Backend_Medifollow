@@ -21,6 +21,9 @@ npm install --save-dev @types/bcrypt
 // securite : k yekteb mot de passe ghalet  b @IP kadeh men marra yetkass alih mel main.ts w temchi tetbloca accès f authservice
 npm i express-rate-limit
 
+//cron activation /déactivation 
+npm install @nestjs/schedule
+
 "NB ‼ :
 Middleware = portique d’entrée (log, headers, contrôle basique)
 JwtAuthGuard = carte d’identité (token valide ?)
