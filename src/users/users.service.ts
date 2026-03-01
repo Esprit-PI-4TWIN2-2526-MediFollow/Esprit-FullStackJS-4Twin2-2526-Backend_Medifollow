@@ -70,58 +70,36 @@ export class UsersService {
   }
 
   async update(id: string, user: Partial<User>, avatar?: Express.Multer.File) {
-  if (!id || !isValidObjectId(id)) {
-    throw new BadRequestException('Invalid MongoDB id');
-  }
-
-  // 🔧 Normalisation de actif (string -> boolean)
-  if (typeof (user as any).actif === 'string') {
-    (user as any).actif = (user as any).actif === 'true';
-  }
-
-  if (user.password) {
-    const hashed = await bcrypt.hash(user.password as string, 10);
-    user = { ...user, password: hashed };
-  }
-
-  if (avatar) {
-    const avatarUrl = await this.cloudinaryService.uploadImage(avatar);
-    user = { ...user, avatarUrl };
-  }
-
-  const updated = await this.userModel.findByIdAndUpdate(id, user, { new: true });
-
-  if (!updated) {
-    throw new NotFoundException('User introuvable');
-  }
-
-  // 🔔 Maintenant la condition va marcher
-  if (typeof user.actif === 'boolean') {
-    await this.emailService.sendStatusChangeEmail(updated.email, user.actif);
-  }
-
-  return updated;
-}
-
-
-  /* sync update(id: string, user: Partial<User>) {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid MongoDB id');
     }
 
+    if (typeof (user as any).actif === 'string') {
+      (user as any).actif = (user as any).actif === 'true';
+    }
+
     if (user.password) {
-      const saltRounds = 10;
-      const hashed = await bcrypt.hash(user.password as string, saltRounds);
+      const hashed = await bcrypt.hash(user.password as string, 10);
       user = { ...user, password: hashed };
     }
 
-    const updated = await this.userModel
-      .findOneAndUpdate({ _id: id, actif: true } as any, user as any, { new: true })
-      .exec();
+    if (avatar) {
+      const avatarUrl = await this.cloudinaryService.uploadImage(avatar);
+      user = { ...user, avatarUrl };
+    }
 
-    if (!updated) throw new NotFoundException('User introuvable');
+    const updated = await this.userModel.findByIdAndUpdate(id, user, { new: true });
+
+    if (!updated) {
+      throw new NotFoundException('User introuvable');
+    }
+
+    if (typeof user.actif === 'boolean') {
+      await this.emailService.sendStatusChangeEmail(updated.email, user.actif);
+    }
+
     return updated;
-  } */
+  }
 
   // delete user
   async delete(id: string) {
@@ -297,12 +275,12 @@ export class UsersService {
 
     const now = new Date();
 
-    // 🔒 Vérifier blocage
+    // Vérifier blocage
     if (user.reactivationBlockedUntil && now < user.reactivationBlockedUntil) {
       throw new BadRequestException('Too many attempts. Try again later.');
     }
 
-    // ⏳ Vérifier expiration
+    //Vérifier expiration
     if (!user.reactivationCodeExpiresAt || now > user.reactivationCodeExpiresAt) {
       throw new BadRequestException('Code expired');
     }
@@ -312,7 +290,7 @@ export class UsersService {
     if (!isMatch) {
       user.reactivationAttempts = (user.reactivationAttempts || 0) + 1;
 
-      // 🚫 Bloquer après 5 tentatives
+      //Bloquer après 5 tentatives
       if (user.reactivationAttempts >= 5) {
         user.reactivationBlockedUntil = new Date(
           now.getTime() + 30 * 60 * 1000 // 30 min block
@@ -323,7 +301,7 @@ export class UsersService {
       throw new BadRequestException('Invalid code');
     }
 
-    // ✅ Succès
+    //Succès
     user.actif = true;
     user.activationExpiresAt = new Date(
       now.setFullYear(now.getFullYear() + 1)
