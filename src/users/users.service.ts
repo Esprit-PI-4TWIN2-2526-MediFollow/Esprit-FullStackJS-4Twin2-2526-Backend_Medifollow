@@ -69,10 +69,13 @@ export class UsersService {
     return u;
   }
 
-  // update user
   async update(id: string, user: Partial<User>, avatar?: Express.Multer.File) {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid MongoDB id');
+    }
+
+    if (typeof (user as any).actif === 'string') {
+      (user as any).actif = (user as any).actif === 'true';
     }
 
     if (user.password) {
@@ -80,37 +83,23 @@ export class UsersService {
       user = { ...user, password: hashed };
     }
 
-    // Upload nouvel avatar si fourni
     if (avatar) {
       const avatarUrl = await this.cloudinaryService.uploadImage(avatar);
-      user = { ...user, avatarUrl }; // mettre à jour l'URL de l'avatar
+      user = { ...user, avatarUrl };
     }
 
-    const updated = await this.userModel
-      .findOneAndUpdate({ _id: id, actif: true } as any, user as any, { new: true })
-      .exec();
+    const updated = await this.userModel.findByIdAndUpdate(id, user, { new: true });
 
-    if (!updated) throw new NotFoundException('User introuvable');
+    if (!updated) {
+      throw new NotFoundException('User introuvable');
+    }
+
+    if (typeof user.actif === 'boolean') {
+      await this.emailService.sendStatusChangeEmail(updated.email, user.actif);
+    }
+
     return updated;
   }
-  /* sync update(id: string, user: Partial<User>) {
-    if (!id || !isValidObjectId(id)) {
-      throw new BadRequestException('Invalid MongoDB id');
-    }
-
-    if (user.password) {
-      const saltRounds = 10;
-      const hashed = await bcrypt.hash(user.password as string, saltRounds);
-      user = { ...user, password: hashed };
-    }
-
-    const updated = await this.userModel
-      .findOneAndUpdate({ _id: id, actif: true } as any, user as any, { new: true })
-      .exec();
-
-    if (!updated) throw new NotFoundException('User introuvable');
-    return updated;
-  } */
 
   // delete user
   async delete(id: string) {
@@ -217,105 +206,117 @@ export class UsersService {
     return roleByName._id.toString();
   }
 
+
   async setActiveStatus(userId: string, status: boolean) {
-    return this.userModel.findByIdAndUpdate(
+    const user = await this.userModel.findByIdAndUpdate(
       userId,
       { actif: status },
       { new: true }
     );
-  }
-@Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-async checkAccountExpiration() {
-  const now = new Date();
-  const users = await this.userModel.find({ actif: true });
 
-  for (const user of users) {
-    if (!user.activationExpiresAt) continue;
-
-    const diffDays = Math.ceil(
-      (user.activationExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    // 30 jours avant expiration → générer code
-    if (diffDays === 30) {
-      await this.generateReactivationCode(user);
+    if (!user) {
+      throw new NotFoundException('User not found');
     }
 
-    // Compte expiré
-    if (diffDays <= 0) {
-      user.actif = false;
-      await user.save();
-      await this.emailService.sendExpiredEmail(user.email);
-    }
-  }
-}
-async generateReactivationCode(user: UserDocument) {
-  const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 chiffres
-  const hash = await bcrypt.hash(code, 10);
+    // Send email notification in English
+    await this.emailService.sendStatusChangeEmail(user.email, status);
 
-  const now = new Date();
-
-  user.reactivationCodeHash = hash;
-  user.reactivationCodeExpiresAt = new Date(now.getTime() + 15 * 60 * 1000); // 15 min
-  user.reactivationAttempts = 0;
-  user.reactivationBlockedUntil = undefined;
-
-  await user.save();
-  await this.emailService.sendReactivationEmail(user.email, code);
-}
-
- async reactivateAccount(email: string, code: string) {
-
-  const user = await this.userModel.findOne({ email });
-
-  if (!user || !user.reactivationCodeHash) {
-    throw new BadRequestException('Invalid request');
+    return user;
   }
 
-  const now = new Date();
 
-  // 🔒 Vérifier blocage
-  if (user.reactivationBlockedUntil && now < user.reactivationBlockedUntil) {
-    throw new BadRequestException('Too many attempts. Try again later.');
-  }
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async checkAccountExpiration() {
+    const now = new Date();
+    const users = await this.userModel.find({ actif: true });
 
-  // ⏳ Vérifier expiration
-  if (!user.reactivationCodeExpiresAt || now > user.reactivationCodeExpiresAt) {
-    throw new BadRequestException('Code expired');
-  }
+    for (const user of users) {
+      if (!user.activationExpiresAt) continue;
 
-  const isMatch = await bcrypt.compare(code, user.reactivationCodeHash);
-
-  if (!isMatch) {
-    user.reactivationAttempts = (user.reactivationAttempts || 0) + 1;
-
-    // 🚫 Bloquer après 5 tentatives
-    if (user.reactivationAttempts >= 5) {
-      user.reactivationBlockedUntil = new Date(
-        now.getTime() + 30 * 60 * 1000 // 30 min block
+      const diffDays = Math.ceil(
+        (user.activationExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
       );
+
+      // 30 jours avant expiration → générer code
+      if (diffDays === 30) {
+        await this.generateReactivationCode(user);
+      }
+
+      // Compte expiré
+      if (diffDays <= 0) {
+        user.actif = false;
+        await user.save();
+        await this.emailService.sendExpiredEmail(user.email);
+      }
     }
+  }
+  async generateReactivationCode(user: UserDocument) {
+    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 chiffres
+    const hash = await bcrypt.hash(code, 10);
+
+    const now = new Date();
+
+    user.reactivationCodeHash = hash;
+    user.reactivationCodeExpiresAt = new Date(now.getTime() + 15 * 60 * 1000); // 15 min
+    user.reactivationAttempts = 0;
+    user.reactivationBlockedUntil = undefined;
 
     await user.save();
-    throw new BadRequestException('Invalid code');
+    await this.emailService.sendReactivationEmail(user.email, code);
   }
 
-  // ✅ Succès
-  user.actif = true;
-  user.activationExpiresAt = new Date(
-    now.setFullYear(now.getFullYear() + 1)
-  );
+  async reactivateAccount(email: string, code: string) {
 
-  // 🧹 Nettoyage sécurité
-  user.reactivationCodeHash = undefined;
-  user.reactivationCodeExpiresAt = undefined;
-  user.reactivationAttempts = 0;
-  user.reactivationBlockedUntil = undefined;
+    const user = await this.userModel.findOne({ email });
 
-  await user.save();
+    if (!user || !user.reactivationCodeHash) {
+      throw new BadRequestException('Invalid request');
+    }
 
-  return { message: 'Account reactivated successfully' };
-}
+    const now = new Date();
+
+    // Vérifier blocage
+    if (user.reactivationBlockedUntil && now < user.reactivationBlockedUntil) {
+      throw new BadRequestException('Too many attempts. Try again later.');
+    }
+
+    //Vérifier expiration
+    if (!user.reactivationCodeExpiresAt || now > user.reactivationCodeExpiresAt) {
+      throw new BadRequestException('Code expired');
+    }
+
+    const isMatch = await bcrypt.compare(code, user.reactivationCodeHash);
+
+    if (!isMatch) {
+      user.reactivationAttempts = (user.reactivationAttempts || 0) + 1;
+
+      //Bloquer après 5 tentatives
+      if (user.reactivationAttempts >= 5) {
+        user.reactivationBlockedUntil = new Date(
+          now.getTime() + 30 * 60 * 1000 // 30 min block
+        );
+      }
+
+      await user.save();
+      throw new BadRequestException('Invalid code');
+    }
+
+    //Succès
+    user.actif = true;
+    user.activationExpiresAt = new Date(
+      now.setFullYear(now.getFullYear() + 1)
+    );
+
+    // 🧹 Nettoyage sécurité
+    user.reactivationCodeHash = undefined;
+    user.reactivationCodeExpiresAt = undefined;
+    user.reactivationAttempts = 0;
+    user.reactivationBlockedUntil = undefined;
+
+    await user.save();
+
+    return { message: 'Account reactivated successfully' };
+  }
 
 
 }

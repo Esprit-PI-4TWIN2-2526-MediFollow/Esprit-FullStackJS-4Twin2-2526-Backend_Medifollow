@@ -84,30 +84,5 @@ export class AuthService {
             },
         };
     }
-    // async signUp(signUpDto: any) {
-    //     const existingUser = await this.usersService.findByEmail(signUpDto.email);
-    //     if (existingUser) throw new UnauthorizedException('Email already in use');
 
-    //     const hashedPassword = await bcrypt.hash(signUpDto.password, 10);
-    //     const user = await this.usersService.create({
-    //         ...signUpDto,
-    //         password: hashedPassword,
-    //     });
-
-    //     const roleValue = typeof user.role === 'object' && user.role !== null && 'name' in user.role ? user.role.name : user.role;
-    //     const payload = {
-    //         sub: user._id.toString(),
-    //         email: user.email,
-    //         role: roleValue,
-    //     };
-
-    //     return {
-    //         accessToken: this.jwtService.sign(payload),
-    //         user: {
-    //             email: user.email,
-    //             role: roleValue,
-    //             nom: user.nom,
-    //         },
-    //     };
-    // }
 }
