@@ -1,14 +1,13 @@
-
-
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { HydratedDocument, Model, isValidObjectId } from 'mongoose';
+import { Model, isValidObjectId } from 'mongoose';
 import { User, UserDocument } from './users.schema';
 import { Role, RoleDocument } from 'src/role/schemas/role.schema';
 import * as bcrypt from 'bcryptjs';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { EmailService } from './email/email.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class UsersService {
@@ -20,16 +19,29 @@ export class UsersService {
     private readonly emailService: EmailService,
 
   ) { }
+
+  private generateTemporaryPassword(length = 12): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+    const bytes = randomBytes(length);
+    let password = '';
+    for (let i = 0; i < length; i += 1) {
+      password += chars[bytes[i] % chars.length];
+    }
+    return password;
+  }
+
   // create user avec image
   async create(user: Partial<User>,
     avatar?: Express.Multer.File): Promise<UserDocument> {
     const createdAt = new Date();
     const activationExpiresAt = new Date();
     activationExpiresAt.setFullYear(activationExpiresAt.getFullYear() + 1);
+    const temporaryPassword = user.password?.trim() || this.generateTemporaryPassword();
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+    const email = user.email?.trim().toLowerCase();
 
-    if (user.password) {
-      const hashed = await bcrypt.hash(user.password as string, 10);
-      user = { ...user, password: hashed };
+    if (!email) {
+      throw new BadRequestException('Email is required');
     }
 
     // Upload avatar si fourni
@@ -38,8 +50,21 @@ export class UsersService {
       user = { ...user, avatarUrl }; // 👈 stocker l'URL
     }
 
-    const created = new this.userModel({ ...user, createdAt, activationExpiresAt });
-    return created.save();
+    const created = new this.userModel({
+      ...user,
+      email,
+      password: hashedPassword,
+      actif: false,
+      mustChangePassword: true,
+      createdAt,
+      activationExpiresAt,
+    });
+
+    const savedUser = await created.save();
+    const fullName = [savedUser.firstName, savedUser.lastName].filter(Boolean).join(' ').trim();
+    await this.emailService.sendNewUserCredentialsEmail(savedUser.email, temporaryPassword, fullName);
+
+    return savedUser;
   }
   /* async create(user: Partial<User>): Promise<UserDocument> {
     const createdAt = new Date();
@@ -69,9 +94,13 @@ export class UsersService {
     return u;
   }
 
-  async update(id: string, user: Partial<User>, avatar?: Express.Multer.File) {
+  async update(id: string, user: Partial<User> = {}, avatar?: Express.Multer.File) {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid MongoDB id');
+    }
+
+    if (!user || typeof user !== 'object') {
+      throw new BadRequestException('Invalid request body');
     }
 
     if (typeof (user as any).actif === 'string') {
@@ -157,12 +186,18 @@ export class UsersService {
   }
 
   async findByEmail(email: string) {
+    const normalizedEmail = email?.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
+
     try {
-      return await this.userModel.findOne({ email }).populate('role').exec();
+      return await this.userModel.findOne({ email: normalizedEmail }).populate('role').exec();
     } catch (error: any) {
       // Legacy data can contain non-ObjectId role values; avoid signin crash.
       if (error?.name === 'CastError') {
-        return this.userModel.findOne({ email }).exec();
+        return this.userModel.findOne({ email: normalizedEmail }).exec();
       }
       throw error;
     }

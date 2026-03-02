@@ -61,6 +61,9 @@ export class User {
   @Prop({ required: false, default: true })
   actif: boolean;
 
+  @Prop({ required: false, default: false })
+  mustChangePassword: boolean;
+
   @Prop()
   activationExpiresAt: Date;
 

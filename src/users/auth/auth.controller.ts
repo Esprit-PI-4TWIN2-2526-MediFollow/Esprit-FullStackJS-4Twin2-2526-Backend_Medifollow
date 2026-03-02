@@ -1,17 +1,19 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { AuthDto } from './auth.dto';
-import { JwtAuthGuard } from './jwt.guard';
-import { RolesGuard } from 'src/role/guard/role.guard';
+import { AuthDto, FirstLoginPasswordDto } from './auth.dto';
 
 @Controller('api')
-
 export class AuthController {
     constructor(private authService: AuthService) { }
 
     @Post('signin')
     signIn(@Body() authDto: AuthDto) {
         return this.authService.signIn(authDto);
+    }
+
+    @Post('first-login/change-password')
+    completeFirstLogin(@Body() dto: FirstLoginPasswordDto) {
+        return this.authService.completeFirstLogin(dto);
     }
 
 }
