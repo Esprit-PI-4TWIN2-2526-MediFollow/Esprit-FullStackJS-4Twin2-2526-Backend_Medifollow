@@ -9,13 +9,13 @@ import { Roles } from './decorator/role.decorator';
 export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
-  @Post('/roles')
+  @Post('/roles/add')
   @Roles('superadmin', 'admin')
   create(@Body() dto: CreateRoleDto) {
     return this.roleService.create(dto);
   }
 
-  @Get()
+  @Get('/roles')
   findAll() {
     return this.roleService.findAll();
   }
