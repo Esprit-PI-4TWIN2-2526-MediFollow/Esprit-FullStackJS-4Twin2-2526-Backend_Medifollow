@@ -57,6 +57,7 @@ export class EmailService {
   ) {
     const loginUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
     const safeName = recipientName?.trim() || 'User';
+    const loginEmail = to.trim();
     const year = new Date().getFullYear();
 
     const html = `
@@ -74,6 +75,10 @@ export class EmailService {
               <p style="margin:0 0 14px;font-size:15px;line-height:1.6;">
                 Your Medifollow account has been created successfully by the administration.
               </p>
+              <p style="margin:0 0 10px;font-size:15px;">Your login email:</p>
+              <div style="margin:0 0 18px;padding:12px 14px;background:#f0f9ff;border:1px dashed #0284c7;border-radius:8px;font-size:16px;font-weight:600;color:#0c4a6e;">
+                ${loginEmail}
+              </div>
               <p style="margin:0 0 10px;font-size:15px;">Your temporary password:</p>
               <div style="margin:0 0 18px;padding:12px 14px;background:#ecfeff;border:1px dashed #0f766e;border-radius:8px;font-size:18px;font-weight:700;letter-spacing:1px;color:#115e59;">
                 ${temporaryPassword}
