@@ -13,7 +13,7 @@ export class ForgetpasswordService {
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
     private configService: ConfigService,
-  ) {}
+  ) { }
 
   private getTitleByGender(sexe?: string): string {
     const normalized = (sexe || '').toLowerCase().trim();
@@ -96,40 +96,40 @@ export class ForgetpasswordService {
   }
 
 
-async resetPassword(token: string, newPassword: string) {
-  try {
-    
-    const user = await this.userModel.findOne({
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: new Date() },
-    });
+  async resetPassword(token: string, newPassword: string) {
+    try {
 
-    if (!user) {
-      
-      throw new BadRequestException('Invalid or expired token');
-    }
-    const hashed = await bcrypt.hash(newPassword, 10);
-    
-    
-    const result = await this.userModel.updateOne(
-      { _id: user._id },
-      { 
-        $set: { password: hashed },
-        $unset: { 
-          resetPasswordToken: "", 
-          resetPasswordExpires: "" 
-        }
+      const user = await this.userModel.findOne({
+        resetPasswordToken: token,
+        resetPasswordExpires: { $gt: new Date() },
+      });
+
+      if (!user) {
+
+        throw new BadRequestException('Invalid or expired token');
       }
-    );
-    
-    const updatedUser = await this.userModel.findById(user._id);
-   
-    return { message: 'Password reset successful' };
-  } catch (error) {
-    
-    throw error;
+      const hashed = await bcrypt.hash(newPassword, 10);
+
+
+      const result = await this.userModel.updateOne(
+        { _id: user._id },
+        {
+          $set: { password: hashed },
+          $unset: {
+            resetPasswordToken: "",
+            resetPasswordExpires: ""
+          }
+        }
+      );
+
+      const updatedUser = await this.userModel.findById(user._id);
+
+      return { message: 'Password reset successful', user: updatedUser };
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      throw error;
+    }
   }
-}
 
 
 

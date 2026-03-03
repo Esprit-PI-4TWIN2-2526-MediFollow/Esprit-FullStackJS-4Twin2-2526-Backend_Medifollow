@@ -12,7 +12,7 @@ async function bootstrap() {
     origin: 'http://localhost:4200',
   });
 
-  // Limiter les tentatives de connexion pour prévenir les attaques par force brute
+  // Limiter nb itérations pour prévenir les attaques par force brute
   app.use(
     '/auth/signin',
     rateLimit({

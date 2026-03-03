@@ -66,17 +66,7 @@ export class UsersService {
 
     return savedUser;
   }
-  /* async create(user: Partial<User>): Promise<UserDocument> {
-    const createdAt = new Date();
-    if (user.password) {
-      const saltRounds = 10;
-      const hashed = await bcrypt.hash(user.password as string, saltRounds);
-      user = { ...user, password: hashed };
-    }
 
-    const created = new this.userModel({ ...user, createdAt });
-    return created.save();
-  } */
 
   // get all users
   async findAll(): Promise<UserDocument[]> {
@@ -146,7 +136,7 @@ export class UsersService {
     const result = await this.userModel.deleteMany({});
     return { deletedCount: result.deletedCount ?? 0 };
   }
-  // delete selected inactive users (hard delete)
+  // delete selected inactive users 
   async deleteSelectedInactive(ids: string[]): Promise<{ deletedCount: number }> {
     if (!Array.isArray(ids) || ids.length === 0) {
       throw new BadRequestException('ids must be a non-empty array');
@@ -252,8 +242,6 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-
-    // Send email notification in English
     await this.emailService.sendStatusChangeEmail(user.email, status);
 
     return user;
@@ -272,7 +260,7 @@ export class UsersService {
         (user.activationExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
       );
 
-      // 30 jours avant expiration → générer code
+      // 30 jours avant expiration-- générer code
       if (diffDays === 30) {
         await this.generateReactivationCode(user);
       }
@@ -288,68 +276,50 @@ export class UsersService {
   async generateReactivationCode(user: UserDocument) {
     const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 chiffres
     const hash = await bcrypt.hash(code, 10);
-
     const now = new Date();
-
     user.reactivationCodeHash = hash;
     user.reactivationCodeExpiresAt = new Date(now.getTime() + 15 * 60 * 1000); // 15 min
     user.reactivationAttempts = 0;
     user.reactivationBlockedUntil = undefined;
-
     await user.save();
     await this.emailService.sendReactivationEmail(user.email, code);
   }
 
   async reactivateAccount(email: string, code: string) {
-
     const user = await this.userModel.findOne({ email });
-
     if (!user || !user.reactivationCodeHash) {
       throw new BadRequestException('Invalid request');
     }
-
     const now = new Date();
-
     // Vérifier blocage
     if (user.reactivationBlockedUntil && now < user.reactivationBlockedUntil) {
       throw new BadRequestException('Too many attempts. Try again later.');
     }
-
     //Vérifier expiration
     if (!user.reactivationCodeExpiresAt || now > user.reactivationCodeExpiresAt) {
       throw new BadRequestException('Code expired');
     }
-
     const isMatch = await bcrypt.compare(code, user.reactivationCodeHash);
-
     if (!isMatch) {
       user.reactivationAttempts = (user.reactivationAttempts || 0) + 1;
-
       //Bloquer après 5 tentatives
       if (user.reactivationAttempts >= 5) {
         user.reactivationBlockedUntil = new Date(
           now.getTime() + 30 * 60 * 1000 // 30 min block
         );
       }
-
       await user.save();
       throw new BadRequestException('Invalid code');
     }
-
-    //Succès
     user.actif = true;
     user.activationExpiresAt = new Date(
       now.setFullYear(now.getFullYear() + 1)
     );
-
-    // 🧹 Nettoyage sécurité
     user.reactivationCodeHash = undefined;
     user.reactivationCodeExpiresAt = undefined;
     user.reactivationAttempts = 0;
     user.reactivationBlockedUntil = undefined;
-
     await user.save();
-
     return { message: 'Account reactivated successfully' };
   }
 

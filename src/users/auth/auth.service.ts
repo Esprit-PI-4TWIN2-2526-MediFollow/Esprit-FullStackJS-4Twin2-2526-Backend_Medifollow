@@ -82,8 +82,6 @@ export class AuthService {
 
             throw new UnauthorizedException('Compte inactif. Contactez un administrateur.');
         }
-
-        // rôle depuis la DB (ObjectId ou objet Role)
         const roleValue =
             typeof user.role === 'object' && user.role !== null && 'name' in user.role
                 ? user.role.name

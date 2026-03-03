@@ -42,9 +42,7 @@ export class UsersController {
   ) {
     return this.usersService.create(user, avatar);
   }
-  /*  create(@Body() user: Partial<User>) {
-       return this.usersService.create(user);
-   } */
+
 
   // get all users
   @Get('/users/all')
@@ -83,9 +81,7 @@ export class UsersController {
   ) {
     return this.usersService.update(id, user, avatar);
   }
-  /* update(@Param('id') id: string, @Body() user: Partial<User>) {
-      return this.usersService.update(id, user);
-  } */
+
   // delete user
   @Delete('/delete/:id')
   delete(@Param('id') id: string) {
@@ -142,7 +138,6 @@ export class UsersController {
   }
 
 
-  // 🔹 Endpoint pour réactiver le compte
   @Post('reactivate')
   async reactivate(@Body() body: ReactivateAccountDto) {
     const { email, code } = plainToInstance(ReactivateAccountDto, body);

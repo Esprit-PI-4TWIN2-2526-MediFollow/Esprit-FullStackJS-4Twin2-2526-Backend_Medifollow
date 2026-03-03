@@ -44,7 +44,7 @@ export class User {
   profileImageName: string;
 
   @Prop({ default: null })
-  avatarUrl: string; // URL genere par Cloudinary qui sera stockée dans MongoDB
+  avatarUrl: string; // URL genere par Cloudinary 
   @Prop({ required: false })
   primaryDoctor: string;
 
