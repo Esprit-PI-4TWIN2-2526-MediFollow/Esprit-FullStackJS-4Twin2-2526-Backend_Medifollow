@@ -21,8 +21,6 @@ import { FaceRecognitionModule } from './face-recognition/face-recognition.modul
       
     }),
       ScheduleModule.forRoot(),
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

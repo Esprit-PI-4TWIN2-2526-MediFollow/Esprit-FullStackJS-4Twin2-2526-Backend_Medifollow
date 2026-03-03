@@ -14,9 +14,9 @@ import { EmailModule } from './email/email.module';
       { name: User.name, schema: UserSchema },
       { name: Role.name, schema: RoleSchema },
     ]),
-    CloudinaryModule, // ✅ indispensable
-    ForgetpasswordModule, // ✅ indispensable
-    EmailModule // ✅ indispensable
+    CloudinaryModule, 
+    ForgetpasswordModule, 
+    EmailModule 
   ],
   controllers: [UsersController],
   providers: [UsersService],
