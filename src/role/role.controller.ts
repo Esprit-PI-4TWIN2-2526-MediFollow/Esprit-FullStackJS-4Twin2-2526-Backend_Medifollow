@@ -9,7 +9,7 @@ import { Roles } from './decorator/role.decorator';
 export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
-  @Post()
+  @Post('/roles')
   @Roles('superadmin', 'admin')
   create(@Body() dto: CreateRoleDto) {
     return this.roleService.create(dto);
@@ -26,13 +26,13 @@ export class RoleController {
     return this.roleService.findOne(id);
   }
 
-  @Put(':id')
+  @Put('/roles/:id')
   @Roles('superadmin')
   update(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
     return this.roleService.update(id, dto);
   }
 
-  @Delete(':id')
+  @Delete('/roles/:id')
   @Roles('superadmin')
   remove(@Param('id') id: string) {
     return this.roleService.remove(id);
