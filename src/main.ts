@@ -3,7 +3,8 @@ import { AppModule } from './app.module';
 import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import rateLimit from 'express-rate-limit';
-
+import * as crypto from 'crypto';
+(global as any).crypto = crypto;
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe());
