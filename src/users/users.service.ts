@@ -70,7 +70,7 @@ export class UsersService {
 
   // get all users
   async findAll(): Promise<UserDocument[]> {
-    return this.userModel.find().exec();
+    return this.userModel.find().sort({ createdAt: -1, _id: -1 }).exec();
   }
 
   // get user by id
