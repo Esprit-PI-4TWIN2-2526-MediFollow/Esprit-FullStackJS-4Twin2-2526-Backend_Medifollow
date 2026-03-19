@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { IsEnum } from 'class-validator';
 import { HydratedDocument, Types } from 'mongoose';
 
 import { Role } from 'src/role/schemas/role.schema';
@@ -25,12 +26,15 @@ export class User {
   @Prop({ required: false })
   sexe: string;
 
+  @IsEnum(['Cardiology', 'Neurology', 'Pediatrics', 'Oncology', 'General Medicine', 'Orthopedics', 'Dermatology', 'Psychiatry', 'Radiology', 'Surgery'])
   @Prop({ required: false })
   specialization: string;
 
+  @IsEnum(['MD — Doctor of Medicine ','DES — Diploma of Specialized Studies','DESC — Diploma of Complementary Specialized Studies'])
   @Prop({ required: false })
   diploma: string;
 
+  @IsEnum(['Jenior', 'Senior', 'Expert'])
   @Prop({ required: false })
   grade: string;
   @Prop({ required: false })
