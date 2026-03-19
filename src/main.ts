@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+<<<<<<< Updated upstream
   app.useGlobalPipes(new ValidationPipe());
 
   app.enableCors({
@@ -24,6 +25,12 @@ async function bootstrap() {
     }),
   );
 
+=======
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.enableCors({
+    origin: 'http://localhost:4200',
+  });
+>>>>>>> Stashed changes
   await app.listen(3000);
 }
 bootstrap();
