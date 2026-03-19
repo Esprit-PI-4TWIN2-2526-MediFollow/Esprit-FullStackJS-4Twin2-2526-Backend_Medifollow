@@ -29,19 +29,22 @@ pipeline {
         }
 
         stage('SonarQube') {
-            steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh """
-                    sonar-scanner \
-                    -Dsonar.projectKey=MediFollow-Backend \
-                    -Dsonar.sources=src \
-                    -Dsonar.host.url=http://localhost:9000 \
-                    -Dsonar.login=${SONAR_TOKEN} \
-                    -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-                    """
-                }
+    steps {
+        withSonarQubeEnv('SonarQube') {
+            script {
+                def scannerHome = tool 'sonar-scanner'
+                sh """
+                ${scannerHome}/bin/sonar-scanner \
+                -Dsonar.projectKey=MediFollow-Backend \
+                -Dsonar.sources=src \
+                -Dsonar.host.url=http://localhost:9000 \
+                -Dsonar.login=$SONAR_TOKEN \
+                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+                """
             }
         }
+    }
+}
 
         stage('Quality Gate') {
             steps {
