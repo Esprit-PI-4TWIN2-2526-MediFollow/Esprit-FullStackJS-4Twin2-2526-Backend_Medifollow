@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        SONAR_TOKEN = credentials('squ_52fbe3fb9d3e8af12056ded3841e98a8aab8faee')
+        SONAR_TOKEN = credentials('sonar-token')
     }
 
     stages {
