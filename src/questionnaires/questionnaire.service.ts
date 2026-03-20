@@ -148,7 +148,7 @@ export class QuestionnaireService {
   async getResponses(questionnaireId: string): Promise<QuestionnaireResponse[]> {
     return this.responseModel
       .find({ questionnaireId: new Types.ObjectId(questionnaireId) })
-      .populate('patientId', 'firstName lastName email')
+      .populate('patientId', 'firstName lastName email avatarUrl profileImageName')
       .sort({ createdAt: -1 })
       .exec();
   }
