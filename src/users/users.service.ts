@@ -84,6 +84,21 @@ export class UsersService {
     return u;
   }
 
+  //get user by role
+async findByRole(role: string) {
+  const normalizedRole = role?.trim();
+
+  if (!normalizedRole) {
+    throw new BadRequestException('role is required');
+  }
+
+  return this.userModel.find({
+    role: { $regex: new RegExp(`^${normalizedRole}$`, 'i') }
+  }).exec();
+}
+
+
+
   async update(id: string, user: Partial<User> = {}, avatar?: Express.Multer.File) {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid MongoDB id');
