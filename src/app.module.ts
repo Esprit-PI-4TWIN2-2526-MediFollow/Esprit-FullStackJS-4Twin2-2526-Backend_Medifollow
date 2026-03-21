@@ -13,6 +13,7 @@ import { EmailModule } from './users/email/email.module';
 import { WebauthnModule } from './webauthn/webauthn.module';
 import { FaceRecognitionModule } from './face-recognition/face-recognition.module';
 import { QuestionnaireModule } from './questionnaires/questionnaires.module';
+import { AiModule } from './ai/ai.module';
 @Module({
   imports: [
 
@@ -39,6 +40,7 @@ import { QuestionnaireModule } from './questionnaires/questionnaires.module';
     WebauthnModule,
     FaceRecognitionModule,
     QuestionnaireModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [AppService],
