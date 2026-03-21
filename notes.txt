@@ -93,4 +93,9 @@ git fetch origin
 git merge origin/main
 
 git push origin ta_branche
-yahya karoui 4TWIN
+
+
+//pour statistique installez:
+npm install chart.js ng2-charts@5 --legacy-peer-deps
+
+
