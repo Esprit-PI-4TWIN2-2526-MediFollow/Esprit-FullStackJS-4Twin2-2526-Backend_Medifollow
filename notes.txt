@@ -77,3 +77,5 @@ git merge origin/main
 
 git push origin ta_branche
 
+//pour statistique installez:
+npm install chart.js ng2-charts@5 --legacy-peer-deps
