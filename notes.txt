@@ -49,6 +49,20 @@ npm i typeorm reflect-metadata --legacy-peer-deps //ken 3andek error fel typeorm
  #Khalil forgetpassword
 npm install nodemailer bcrypt
 
+
+
+................./--------------
+npm install @nestjs/mapped-types
+
+
+http://localhost:3000/api
+npm install @nestjs/swagger swagger-ui-express
+
+
+
+
+---------------------------------------------------------
+
 //Commande Merge Ma branche --> Main
 
 # Te placer sur main
@@ -65,6 +79,9 @@ git merge ta_branche
 git push origin main
 
 
+
+-------------------------------------------------------
+
 // Commande Merge Main --> ta branche 
 # Te placer sur ta branche
 git checkout ta_branche
@@ -77,5 +94,8 @@ git merge origin/main
 
 git push origin ta_branche
 
+
 //pour statistique installez:
 npm install chart.js ng2-charts@5 --legacy-peer-deps
+
+
