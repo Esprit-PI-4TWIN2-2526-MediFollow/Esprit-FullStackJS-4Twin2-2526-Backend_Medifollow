@@ -70,7 +70,7 @@ export class UsersService {
 
   // get all users
   async findAll(): Promise<UserDocument[]> {
-    return this.userModel.find().exec();
+    return this.userModel.find().sort({ createdAt: -1, _id: -1 }).exec();
   }
 
   // get user by id
@@ -83,6 +83,21 @@ export class UsersService {
     if (!u) throw new NotFoundException('User introuvable');
     return u;
   }
+
+  //get user by role
+async findByRole(role: string) {
+  const normalizedRole = role?.trim();
+
+  if (!normalizedRole) {
+    throw new BadRequestException('role is required');
+  }
+
+  return this.userModel.find({
+    role: { $regex: new RegExp(`^${normalizedRole}$`, 'i') }
+  }).exec();
+}
+
+
 
   async update(id: string, user: Partial<User> = {}, avatar?: Express.Multer.File) {
     if (!id || !isValidObjectId(id)) {

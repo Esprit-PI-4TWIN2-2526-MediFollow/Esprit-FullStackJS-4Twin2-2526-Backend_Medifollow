@@ -60,6 +60,11 @@ export class UsersController {
     return this.usersService.findByEmail(email);
   }
 
+    @Get('/users/role/:role')
+  findByRole(@Param('role') role: string) {
+    return this.usersService.findByRole(role);
+  }
+
   // update user
   @Put('/users/update/:id')
   @UseInterceptors(
