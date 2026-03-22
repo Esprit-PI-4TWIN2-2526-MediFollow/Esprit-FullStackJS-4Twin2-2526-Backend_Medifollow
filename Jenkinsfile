@@ -44,6 +44,22 @@ pipeline {
             }
         }
     }
+        }
+
+        stage('Deploy to Kubernetes') {
+    steps {
+        sh '''
+        export KUBECONFIG=$HOME/.kube/config
+        kubectl apply -f deployment.yaml
+        kubectl apply -f service.yaml
+        kubectl rollout restart deployment medifollow-backend
+        '''
+    }
+}
+stage('Test Kubernetes') {
+    steps {
+        sh 'kubectl get nodes'
+    }
 }
 
         
