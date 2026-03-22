@@ -37,14 +37,14 @@ pipeline {
                 ${scannerHome}/bin/sonar-scanner \
                 -Dsonar.projectKey=MediFollow-Backend \
                 -Dsonar.sources=src \
-                -Dsonar.host.url=http://host.docker.internal:9000 \
+                -Dsonar.host.url=http://localhost:9000 \
                 -Dsonar.login=$SONAR_TOKEN \
                 -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
                 """
             }
         }
     }
-}
+        }
 
         stage('Deploy to Kubernetes') {
     steps {
