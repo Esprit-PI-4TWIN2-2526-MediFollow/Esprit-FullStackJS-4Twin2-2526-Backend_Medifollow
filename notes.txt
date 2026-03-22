@@ -74,7 +74,7 @@ git pull origin main
 # Fusionner ta branche
 git merge ta_branche
 // NB !! : vérifier GitHUb desktop pour visualiser les erreurs afin de les acceptés 
-
+yahya
 # Pousser vers GitHub
 git push origin main
 
