@@ -45,23 +45,14 @@ pipeline {
         }
     }
         }
-
-        stage('Deploy to Kubernetes') {
+stage('Trigger CD Pipeline') {
     steps {
-        sh '''
-        export KUBECONFIG=$HOME/.kube/config
-        kubectl apply -f deployment.yaml
-        kubectl apply -f service.yaml
-        kubectl rollout restart deployment medifollow-backend
-        '''
+        build job: 'Medifollow-Backend_CD', wait: false
     }
 }
-stage('Test Kubernetes') {
-    steps {
-        sh 'kubectl get nodes'
-    }
-}
+        
 
         
     }
+           
 }
