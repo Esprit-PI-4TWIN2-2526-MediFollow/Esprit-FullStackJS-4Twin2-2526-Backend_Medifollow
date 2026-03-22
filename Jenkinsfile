@@ -37,7 +37,7 @@ pipeline {
                 ${scannerHome}/bin/sonar-scanner \
                 -Dsonar.projectKey=MediFollow-Backend \
                 -Dsonar.sources=src \
-                -Dsonar.host.url=http://localhost:9000 \
+                -Dsonar.host.url=http://192.168.40.128:9000 \
                 -Dsonar.login=$SONAR_TOKEN \
                 -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
                 """
