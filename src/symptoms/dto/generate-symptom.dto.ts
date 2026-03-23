@@ -1,6 +1,7 @@
 import { IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class GenerateSymptomDto {
+  [x: string]: any;
   @IsString()
   @IsNotEmpty()
   title: string;

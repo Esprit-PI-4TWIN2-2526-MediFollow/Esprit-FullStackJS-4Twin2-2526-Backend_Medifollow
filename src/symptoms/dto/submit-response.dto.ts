@@ -1,10 +1,33 @@
-import { IsMongoId, IsNotEmpty, IsObject } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  ValidateNested,
+} from 'class-validator';
+
+class SymptomAnswerDto {
+  @IsMongoId()
+  @IsNotEmpty()
+  questionId: string;
+
+  value: string | number | boolean | string[] | null;
+}
 
 export class SubmitResponseDto {
   @IsMongoId()
   @IsNotEmpty()
-  patientId: string;
+  formId: string;
 
-  @IsObject()
-  answers: Record<string, any>;
+  @IsMongoId()
+  @IsOptional()
+  patientId?: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => SymptomAnswerDto)
+  answers: SymptomAnswerDto[];
 }

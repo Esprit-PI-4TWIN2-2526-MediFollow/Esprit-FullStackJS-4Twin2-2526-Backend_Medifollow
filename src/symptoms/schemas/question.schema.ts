@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 
 export type QuestionDocument = Question & HydratedDocument<Question>;
 
@@ -14,6 +14,8 @@ export type QuestionType =
 
 @Schema({ _id: true })
 export class Question {
+  _id?: Types.ObjectId;
+
   @Prop({ required: true })
   label: string;
 
@@ -33,7 +35,7 @@ export class Question {
   options: string[];
 
   @Prop({ type: Object, required: false })
-  validation: {
+  validation?: {
     min?: number;
     max?: number;
   };
