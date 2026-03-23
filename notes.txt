@@ -74,7 +74,7 @@ git pull origin main
 # Fusionner ta branche
 git merge ta_branche
 // NB !! : vérifier GitHUb desktop pour visualiser les erreurs afin de les acceptés 
-
+yahyakaroui4TWIN233
 # Pousser vers GitHub
 git push origin main
 
@@ -93,7 +93,7 @@ git fetch origin
 git merge origin/main
 
 git push origin ta_branche
-
+yahya
 
 //pour statistique installez:
 npm install chart.js ng2-charts@5 --legacy-peer-deps
