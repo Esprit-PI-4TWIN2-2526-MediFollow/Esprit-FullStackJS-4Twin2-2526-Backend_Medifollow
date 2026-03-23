@@ -1,27 +1,56 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { SymptomsService } from './symptoms.service';
 import { CreateSymptomDto } from './dto/create-symptom.dto';
+import { SubmitResponseDto } from './dto/submit-response.dto';
+import { GenerateSymptomDto } from './dto/generate-symptom.dto';
+import { UpdateSymptomDto } from './dto/update-symptom.dto';
 
 @Controller('symptoms')
 export class SymptomsController {
-
   constructor(private readonly service: SymptomsService) {}
 
-  // ADMIN
   @Post('form')
   create(@Body() dto: CreateSymptomDto) {
     return this.service.create(dto);
   }
 
-  // ADMIN
   @Get('form')
   findAll() {
     return this.service.findAll();
   }
 
-  // PATIENT
   @Get('form/latest')
-  getLatest() {
-    return this.service.getLatest();
+  getLatestActive() {
+    return this.service.getLatestActive();
+  }
+
+  @Get('form/:id')
+  findById(@Param('id') id: string) {
+    return this.service.findById(id);
+  }
+
+  @Put('form/:id')
+  update(@Param('id') id: string, @Body() dto: UpdateSymptomDto) {
+    return this.service.update(id, dto);
+  }
+
+  @Delete('form/:id')
+  remove(@Param('id') id: string) {
+    return this.service.remove(id);
+  }
+
+  @Post('response')
+  submitResponse(@Body() dto: SubmitResponseDto) {
+    return this.service.submitResponse(dto);
+  }
+
+  @Get('response/:patientId')
+  getPatientResponses(@Param('patientId') patientId: string) {
+    return this.service.getPatientResponses(patientId);
+  }
+
+  @Post('generate')
+  generate(@Body() dto: GenerateSymptomDto) {
+    return this.service.generateQuestions(dto);
   }
 }

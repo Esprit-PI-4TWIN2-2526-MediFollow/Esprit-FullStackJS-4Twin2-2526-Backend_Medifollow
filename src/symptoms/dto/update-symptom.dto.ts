@@ -1,11 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { CreateQuestionDto } from './create-question.dto';
 
-export class CreateSymptomDto {
+export class UpdateSymptomDto {
   @IsString()
-  @IsNotEmpty()
-  title: string;
+  @IsOptional()
+  title?: string;
 
   @IsBoolean()
   @IsOptional()
