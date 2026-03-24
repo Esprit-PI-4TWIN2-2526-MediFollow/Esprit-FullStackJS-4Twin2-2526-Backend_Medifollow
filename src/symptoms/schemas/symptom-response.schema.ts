@@ -19,8 +19,11 @@ export class SymptomResponse {
   @Prop({ type: Types.ObjectId, ref: 'Symptom', required: true })
   symptomFormId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
-  patientId?: Types.ObjectId;
+  @Prop({ type: String, required: false })
+  patientId?: string;
+
+  @Prop({ required: true, type: Date, default: Date.now })
+  date: Date;
 
   @Prop({ type: [SymptomAnswerSchema], default: [] })
   answers: SymptomAnswer[];

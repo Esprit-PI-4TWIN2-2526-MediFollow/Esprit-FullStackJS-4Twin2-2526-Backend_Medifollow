@@ -24,6 +24,11 @@ export class SymptomsController {
     return this.service.getLatestActive();
   }
 
+  @Get('form/patient/:patientId')
+  findFormByPatient(@Param('patientId') patientId: string) {
+    return this.service.findFormByPatient(patientId);
+  }
+
   @Get('form/:id')
   findById(@Param('id') id: string) {
     return this.service.findById(id);
@@ -40,8 +45,14 @@ export class SymptomsController {
   }
 
   @Post('response')
-  submitResponse(@Body() dto: SubmitResponseDto) {
-    return this.service.submitResponse(dto);
+  createResponse(@Body() dto: SubmitResponseDto) {
+    console.log('RECEIVED DTO:', dto);
+    return this.service.saveResponse(dto);
+  }
+
+  @Get('response/today/:patientId')
+  getTodayResponse(@Param('patientId') patientId: string) {
+    return this.service.getTodayResponse(patientId);
   }
 
   @Get('response/:patientId')

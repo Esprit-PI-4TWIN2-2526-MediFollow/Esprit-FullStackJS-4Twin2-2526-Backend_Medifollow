@@ -9,6 +9,9 @@ export class Symptom {
   @Prop({ required: true })
   title: string;
 
+  @Prop({ type: String, required: true })
+  patientId: string;
+
   @Prop({ type: [QuestionSchema], default: [] })
   questions: Question[];
 

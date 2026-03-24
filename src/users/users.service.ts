@@ -85,6 +85,9 @@ export class UsersService {
     return this.userModel.find().sort({ createdAt: -1, _id: -1 }).exec();
   }
 
+  async getPatients(): Promise<UserDocument[]> {
+    return this.userModel.find({ role: 'patient' }).exec();
+  }
   async exportUsers(format: string): Promise<{
     filename: string;
     contentType: string;

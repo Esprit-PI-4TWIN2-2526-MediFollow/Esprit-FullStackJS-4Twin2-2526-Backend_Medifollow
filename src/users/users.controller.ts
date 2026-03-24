@@ -53,6 +53,11 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
+  @Get('/users/patients')
+  getPatients() {
+    return this.usersService.getPatients();
+  }
+
   @Get('/users/export/:format')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('superadmin', 'SuperAdmin', 'SUPERADMIN', 'super_admin', 'super-admin', 'super admin', 'admin')
