@@ -49,6 +49,12 @@ export class UsersController {
   findAll() {
     return this.usersService.findAll();
   }
+
+  @Get('/users/patients')
+  getPatients() {
+    return this.usersService.getPatients();
+  }
+
   // get user by id
   @Get('/users/:id')
   findOne(@Param('id') id: string) {
