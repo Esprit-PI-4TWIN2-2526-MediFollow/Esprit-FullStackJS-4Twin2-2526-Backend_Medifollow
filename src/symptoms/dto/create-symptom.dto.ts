@@ -7,6 +7,10 @@ export class CreateSymptomDto {
   @IsNotEmpty()
   title: string;
 
+  @IsString()
+  @IsNotEmpty()
+  patientId: string;
+
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
