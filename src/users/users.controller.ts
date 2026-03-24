@@ -52,6 +52,21 @@ export class UsersController {
   findAll() {
     return this.usersService.findAll();
   }
+
+  @Get('/users/patients')
+  getPatients() {
+    return this.usersService.getPatients();
+  }
+
+  @Get('/users/export/:format')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('superadmin', 'SuperAdmin', 'SUPERADMIN', 'super_admin', 'super-admin', 'super admin', 'admin')
+  async exportUsers(@Param('format') format: string, @Res() res: Response) {
+    const file = await this.usersService.exportUsers(format);
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    res.send(file.data);
+  }
   // get user by id
   @Get('/users/:id')
   findOne(@Param('id') id: string) {
