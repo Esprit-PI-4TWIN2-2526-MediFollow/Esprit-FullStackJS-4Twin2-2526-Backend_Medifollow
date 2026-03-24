@@ -11,6 +11,18 @@ import { randomBytes } from 'crypto';
 
 @Injectable()
 export class UsersService {
+  private readonly exportColumns = [
+    'id',
+    'firstName',
+    'lastName',
+    'email',
+    'phoneNumber',
+    'role',
+    'actif',
+    'specialization',
+    'assignedDepartment',
+    'createdAt',
+  ] as const;
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
@@ -71,6 +83,188 @@ export class UsersService {
   // get all users
   async findAll(): Promise<UserDocument[]> {
     return this.userModel.find().sort({ createdAt: -1, _id: -1 }).exec();
+  }
+
+  async exportUsers(format: string): Promise<{
+    filename: string;
+    contentType: string;
+    data: Buffer;
+  }> {
+    const normalizedFormat = format?.trim().toLowerCase();
+
+    if (!['csv', 'pdf'].includes(normalizedFormat)) {
+      throw new BadRequestException('Unsupported export format. Use csv or pdf.');
+    }
+
+    const users = await this.userModel
+      .find()
+      .sort({ createdAt: -1, _id: -1 })
+      .lean()
+      .exec();
+
+    const roleIds = [...new Set(
+      users
+        .map((user) => user?.role as any)
+        .filter((role) => typeof role === 'string' && isValidObjectId(role)),
+    )] as string[];
+
+    const roles = roleIds.length > 0
+      ? await this.roleModel.find({ _id: { $in: roleIds } }).select('_id name').lean().exec()
+      : [];
+
+    const roleMap = new Map(roles.map((role) => [role._id.toString(), role.name]));
+    const rows = users.map((user) => this.toExportRow(user, roleMap));
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+    if (normalizedFormat === 'csv') {
+      return {
+        filename: `users-export-${timestamp}.csv`,
+        contentType: 'text/csv; charset=utf-8',
+        data: Buffer.from(this.buildCsv(rows), 'utf-8'),
+      };
+    }
+
+    return {
+      filename: `users-export-${timestamp}.pdf`,
+      contentType: 'application/pdf',
+      data: this.buildPdf(rows),
+    };
+  }
+
+  private toExportRow(
+    user: any,
+    roleMap: Map<string, string>,
+  ): Record<(typeof this.exportColumns)[number], string> {
+    const rawRole = user?.role;
+    const role =
+      rawRole && typeof rawRole === 'object' && 'name' in rawRole
+        ? rawRole.name
+        : typeof rawRole === 'string' && isValidObjectId(rawRole)
+          ? roleMap.get(rawRole) ?? rawRole
+          : rawRole || '';
+
+    return {
+      id: user?._id?.toString?.() ?? '',
+      firstName: user?.firstName ?? '',
+      lastName: user?.lastName ?? '',
+      email: user?.email ?? '',
+      phoneNumber: user?.phoneNumber ?? '',
+      role: role?.toString?.() ?? '',
+      actif: user?.actif ? 'Active' : 'Inactive',
+      specialization: user?.specialization ?? '',
+      assignedDepartment: user?.assignedDepartment ?? '',
+      createdAt: user?.createdAt ? new Date(user.createdAt).toISOString() : '',
+    };
+  }
+
+  private buildCsv(rows: Array<Record<(typeof this.exportColumns)[number], string>>): string {
+    const header = this.exportColumns.join(',');
+    const lines = rows.map((row) =>
+      this.exportColumns.map((column) => this.escapeCsvValue(row[column])).join(','),
+    );
+
+    return [header, ...lines].join('\n');
+  }
+
+  private escapeCsvValue(value: string): string {
+    const normalized = (value ?? '').toString().replace(/"/g, '""');
+    return `"${normalized}"`;
+  }
+
+  private buildPdf(rows: Array<Record<(typeof this.exportColumns)[number], string>>): Buffer {
+    const lines = [
+      'User Export',
+      `Generated at: ${new Date().toISOString()}`,
+      '',
+      ...rows.flatMap((row, index) => [
+        `User ${index + 1}`,
+        ...this.exportColumns.map((column) => `${column}: ${row[column]}`),
+        '',
+      ]),
+    ];
+
+    const pageHeight = 792;
+    const topMargin = 40;
+    const lineHeight = 14;
+    const maxLinesPerPage = Math.max(1, Math.floor((pageHeight - topMargin * 2) / lineHeight));
+    const pages: string[][] = [];
+
+    for (let i = 0; i < lines.length; i += maxLinesPerPage) {
+      pages.push(lines.slice(i, i + maxLinesPerPage));
+    }
+
+    return this.createSimplePdf(pages, topMargin, lineHeight, pageHeight);
+  }
+
+  private createSimplePdf(pages: string[][], topMargin: number, lineHeight: number, pageHeight: number): Buffer {
+    const objects: string[] = [];
+    const addObject = (content: string) => {
+      objects.push(content);
+      return objects.length;
+    };
+
+    const fontObjectId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+    const pageObjectIds: number[] = [];
+
+    for (const pageLines of pages) {
+      const contentStream = this.buildPdfContentStream(pageLines, topMargin, lineHeight, pageHeight);
+      const contentObjectId = addObject(
+        `<< /Length ${Buffer.byteLength(contentStream, 'utf8')} >>\nstream\n${contentStream}\nendstream`,
+      );
+      const pageObjectId = addObject(
+        `<< /Type /Page /Parent PAGES_PLACEHOLDER 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`,
+      );
+      pageObjectIds.push(pageObjectId);
+    }
+
+    const pagesObjectId = addObject(
+      `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageObjectIds.length} >>`,
+    );
+
+    for (const pageObjectId of pageObjectIds) {
+      objects[pageObjectId - 1] = objects[pageObjectId - 1].replace('PAGES_PLACEHOLDER', String(pagesObjectId));
+    }
+
+    const catalogObjectId = addObject(`<< /Type /Catalog /Pages ${pagesObjectId} 0 R >>`);
+
+    let pdf = '%PDF-1.4\n';
+    const offsets = [0];
+
+    objects.forEach((object, index) => {
+      offsets.push(Buffer.byteLength(pdf, 'utf8'));
+      pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    });
+
+    const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+    pdf += `xref\n0 ${objects.length + 1}\n`;
+    pdf += '0000000000 65535 f \n';
+    for (let i = 1; i < offsets.length; i += 1) {
+      pdf += `${offsets[i].toString().padStart(10, '0')} 00000 n \n`;
+    }
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogObjectId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+    return Buffer.from(pdf, 'utf8');
+  }
+
+  private buildPdfContentStream(pageLines: string[], topMargin: number, lineHeight: number, pageHeight: number): string {
+    const escapedLines = pageLines.map((line) => this.escapePdfText(line));
+    const commands = ['BT', '/F1 11 Tf'];
+
+    escapedLines.forEach((line, index) => {
+      const y = pageHeight - topMargin - index * lineHeight;
+      commands.push(`1 0 0 1 40 ${y} Tm (${line}) Tj`);
+    });
+
+    commands.push('ET');
+    return commands.join('\n');
+  }
+
+  private escapePdfText(value: string): string {
+    return (value ?? '')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)')
+      .replace(/[^\x20-\x7E]/g, '?');
   }
 
   // get user by id
