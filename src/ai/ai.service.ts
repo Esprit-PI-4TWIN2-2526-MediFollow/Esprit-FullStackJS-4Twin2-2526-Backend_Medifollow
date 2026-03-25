@@ -56,4 +56,41 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
     const questions: GeneratedQuestion[] = JSON.parse(text);
     return questions.map((q, i) => ({ ...q, order: i }));
   }
+
+  // summary for patients responses
+async generatePatientSummary(
+  patientName: string,
+  medicalService: string,
+  allResponses: any[]   // tableau de toutes les réponses du patient
+): Promise<string> {
+
+  const model = this.genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+
+  const prompt = `You are an experienced physician writing a concise medical summary for a colleague.
+
+Patient: ${patientName}
+Medical Service: ${medicalService}
+
+Here are all the responses submitted by the patient:
+
+${JSON.stringify(allResponses, null, 2)}
+
+Generate a **professional, readable and concise** medical summary (maximum 6-7 lines).
+Focus on:
+- Key symptoms and their evolution
+- Pain level, temperature, medication adherence
+- Red flags (if any)
+- Overall trend
+- One clear recommendation
+
+Write in a natural, clinical tone. Do not use bullet points.`;
+
+  const result = await model.generateContent(prompt);
+  let text = result.response.text().trim();
+
+  // Nettoyage
+  text = text.replace(/```[\s\S]*?```/g, '').trim();
+
+  return text;
+}
 }

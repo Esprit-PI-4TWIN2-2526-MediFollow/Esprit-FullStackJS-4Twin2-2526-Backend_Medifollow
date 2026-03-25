@@ -23,4 +23,15 @@ export class AiController {
     );
     return { questions };
   }
+
+  @Post('generate-summary')
+async generateSummary(@Body() body: { patientName: string; medicalService: string; responses: any[] }) {
+  return {
+    summary: await this.aiService.generatePatientSummary(
+      body.patientName,
+      body.medicalService,
+      body.responses
+    )
+  };
+}
 }
