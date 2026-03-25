@@ -16,6 +16,7 @@ import { QuestionnaireModule } from './questionnaires/questionnaires.module';
 import { AiModule } from './ai/ai.module';
 import { ServiceModule } from './service/service.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { SymptomsModule } from './symptoms/symptoms.module';
 @Module({
   imports: [
 
@@ -44,7 +45,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
     QuestionnaireModule,
     AiModule,
     ServiceModule,
-    DashboardModule
+    DashboardModule,
+    SymptomsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

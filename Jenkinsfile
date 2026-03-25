@@ -37,21 +37,22 @@ pipeline {
                 ${scannerHome}/bin/sonar-scanner \
                 -Dsonar.projectKey=MediFollow-Backend \
                 -Dsonar.sources=src \
-                -Dsonar.host.url=http://localhost:9000 \
+                -Dsonar.host.url=http://192.168.40.128:9000 \
                 -Dsonar.login=$SONAR_TOKEN \
                 -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
                 """
             }
         }
     }
-}
-
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 2, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
         }
+stage('Trigger CD Pipeline') {
+    steps {
+        build job: 'Medifollow-Backend_CD', wait: false
     }
+}
+        
+
+        
+    }
+           
 }

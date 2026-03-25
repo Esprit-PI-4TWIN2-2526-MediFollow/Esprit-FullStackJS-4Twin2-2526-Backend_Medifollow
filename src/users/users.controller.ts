@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { User } from './users.schema';
 import { Roles } from 'src/role/decorator/role.decorator';
@@ -6,6 +6,9 @@ import { memoryStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { IsEmail, IsString, Length } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
+import { JwtAuthGuard } from './auth/jwt.guard';
+import { RolesGuard } from 'src/role/guard/role.guard';
+import type { Response } from 'express';
 
 // DTO pour réactiver le compte
 class ReactivateAccountDto {
@@ -48,6 +51,21 @@ export class UsersController {
   @Get('/users/all')
   findAll() {
     return this.usersService.findAll();
+  }
+
+  @Get('/users/patients')
+  getPatients() {
+    return this.usersService.getPatients();
+  }
+
+  @Get('/users/export/:format')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('superadmin', 'SuperAdmin', 'SUPERADMIN', 'super_admin', 'super-admin', 'super admin', 'admin')
+  async exportUsers(@Param('format') format: string, @Res() res: Response) {
+    const file = await this.usersService.exportUsers(format);
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    res.send(file.data);
   }
   // get user by id
   @Get('/users/:id')
