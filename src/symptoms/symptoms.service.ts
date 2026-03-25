@@ -288,18 +288,24 @@ export class SymptomsService {
     const responseDate = this.normalizeDate(dto.date ? new Date(dto.date) : new Date());
 
     if (normalizedPatientId) {
-      const existingTodayResponse = await this.symptomResponseModel
-        .findOne({
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
+
+      const count = await this.symptomResponseModel
+        .countDocuments({
           patientId: normalizedPatientId,
-          date: {
-            $gte: this.getStartOfDay(responseDate),
-            $lt: this.getEndOfDay(responseDate),
+          createdAt: {
+            $gte: todayStart,
+            $lte: todayEnd,
           },
         })
         .exec();
 
-      if (existingTodayResponse) {
-        throw new BadRequestException('Patient has already submitted a response today');
+      if (count >= 3) {
+        throw new BadRequestException('Maximum 3 submissions per day reached');
       }
     }
 

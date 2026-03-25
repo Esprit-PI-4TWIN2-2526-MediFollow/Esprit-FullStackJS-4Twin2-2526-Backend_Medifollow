@@ -33,3 +33,4 @@ export class SymptomResponse {
 }
 
 export const SymptomResponseSchema = SchemaFactory.createForClass(SymptomResponse);
+SymptomResponseSchema.index({ patientId: 1, createdAt: 1 });
