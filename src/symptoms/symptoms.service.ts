@@ -117,6 +117,15 @@ const FRONTEND_QUESTION_TYPES: FrontendQuestionType[] = [
   'date',
 ];
 
+type SymptomResponseByDateItem = {
+  formId: Symptom | Types.ObjectId | string;
+  answers: Array<{
+    question: string;
+    answer: string | number | boolean | string[] | null;
+  }>;
+  createdAt: Date;
+};
+
 @Injectable()
 export class SymptomsService {
   private client = new Groq({
@@ -368,6 +377,58 @@ export class SymptomsService {
       .populate('symptomFormId', 'title isActive')
       .sort({ createdAt: -1 })
       .exec();
+  }
+
+  async getByDate(patientId: string, date: string): Promise<SymptomResponseByDateItem[]> {
+    const normalizedPatientId = patientId?.trim();
+
+    if (!normalizedPatientId) {
+      throw new BadRequestException('Invalid patientId');
+    }
+
+    const start = new Date(date);
+    if (Number.isNaN(start.getTime())) {
+      throw new BadRequestException('Invalid date');
+    }
+
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
+
+    const responses = await this.symptomResponseModel
+      .find({
+        patientId: normalizedPatientId,
+        createdAt: {
+          $gte: start,
+          $lte: end,
+        },
+      })
+      .populate('symptomFormId')
+      .sort({ createdAt: -1, _id: -1 })
+      .exec();
+
+    return responses.map((response) => {
+      const form =
+        response.symptomFormId &&
+        typeof response.symptomFormId === 'object' &&
+        'questions' in response.symptomFormId
+          ? (response.symptomFormId as unknown as Symptom)
+          : null;
+
+      const questionMap = new Map(
+        (form?.questions ?? []).map((question) => [question._id?.toString(), question.label]),
+      );
+
+      return {
+        formId: response.symptomFormId,
+        answers: response.answers.map((answer) => ({
+          question: questionMap.get(answer.questionId) ?? answer.questionId,
+          answer: answer.value,
+        })),
+        createdAt: response.createdAt ?? response.date,
+      };
+    });
   }
 
   // ── AI Question Generation ────────────────────────────────────────────────────

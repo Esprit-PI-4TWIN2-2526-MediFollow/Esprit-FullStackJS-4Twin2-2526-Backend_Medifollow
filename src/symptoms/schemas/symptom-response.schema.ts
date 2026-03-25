@@ -27,6 +27,9 @@ export class SymptomResponse {
 
   @Prop({ type: [SymptomAnswerSchema], default: [] })
   answers: SymptomAnswer[];
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export const SymptomResponseSchema = SchemaFactory.createForClass(SymptomResponse);

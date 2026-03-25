@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Req } from '@nestjs/common';
 import { SymptomsService } from './symptoms.service';
 import { CreateSymptomDto } from './dto/create-symptom.dto';
 import { SubmitResponseDto } from './dto/submit-response.dto';
@@ -53,6 +53,11 @@ export class SymptomsController {
   @Get('response/today/:patientId')
   getTodayResponse(@Param('patientId') patientId: string) {
     return this.service.getTodayResponse(patientId);
+  }
+
+  @Get('response/by-date/:date')
+  getByDate(@Param('date') date: string, @Req() req) {
+    return this.service.getByDate(req.user.sub, date);
   }
 
   @Get('response/:patientId')
