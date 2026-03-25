@@ -45,6 +45,16 @@ export class QuestionnaireController {
     return this.service.toggleStatus(id);
   }
 
+  @Patch(':id/archive')
+  async archive(@Param('id') id: string) {
+    return this.service.archive(id);
+  }
+
+  @Patch(':id/restore')
+  async restore(@Param('id') id: string) {
+    return this.service.restore(id);
+  }
+
   // ── Questions ────────────────────────────────────────────
 
   @Post(':id/questions')
