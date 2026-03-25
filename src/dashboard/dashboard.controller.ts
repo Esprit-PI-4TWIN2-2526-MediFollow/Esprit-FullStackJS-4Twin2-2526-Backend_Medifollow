@@ -41,11 +41,6 @@ export class DashboardController {
     return this.dashboardService.getHighRiskPatients();
   }
 
-  // 7️⃣ GLOBAL FOLLOW-UP RATE
-  @Get('global-followup-rate')
-  async getGlobalFollowupRate() {
-    return this.dashboardService.getGlobalFollowupRate();
-  }
 
   // 8️⃣ ALERTS
   @Get('alerts')

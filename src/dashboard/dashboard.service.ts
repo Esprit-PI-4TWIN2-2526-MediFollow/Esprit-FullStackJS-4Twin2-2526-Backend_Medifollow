@@ -29,10 +29,7 @@ export class DashboardService {
         this.groqApi = new Groq({ apiKey: process.env.GROQ_API_KEY });
     }
 
-    // ─────────────────────────────────────────────
-    // 1. KPI SUMMARY
-    // GET /dashboard/summary
-    // ─────────────────────────────────────────────
+   
     async getSummary() {
         const now = new Date();
         const weekAgo = new Date(now);
@@ -74,10 +71,7 @@ export class DashboardService {
         };
     }
 
-    // ─────────────────────────────────────────────
-    // 2. ACTIVITÉ DE SUIVI DANS LE TEMPS
-    // GET /dashboard/followup-activity?range=7d
-    // ─────────────────────────────────────────────
+  
     async getFollowupActivity(range: string) {
         const days = range === '30d' ? 30 : range === '90d' ? 90 : 7;
         const since = new Date();
@@ -130,9 +124,7 @@ export class DashboardService {
         return Object.values(merged);
     }
 
-    // ─────────────────────────────────────────────
-    // 3. PATIENTS PAR SERVICE
-    // ─────────────────────────────────────────────
+    
     async getPatientsByService() {
         const patientsByDept = await this.userModel
             .aggregate([
@@ -171,9 +163,7 @@ export class DashboardService {
         }));
     }
 
-    // ─────────────────────────────────────────────
-    // 4. COMPLIANCE PAR SERVICE
-    // ─────────────────────────────────────────────
+    
     async getComplianceByService() {
         const [questByService, patientsByDept] = await Promise.all([
             this.questionnaireModel
@@ -226,9 +216,7 @@ export class DashboardService {
         });
     }
 
-    // ─────────────────────────────────────────────
-    // 5. STATISTIQUES QUESTIONNAIRES
-    // ─────────────────────────────────────────────
+    
     async getQuestionnairesStats() {
         const stats = await this.questionnaireModel
             .aggregate([
@@ -291,10 +279,8 @@ export class DashboardService {
         };
     }
 
-    // ─────────────────────────────────────────────
     // 6. PATIENTS À HAUT RISQUE
-    // FIX : ajout du calcul de riskScore (0-100) attendu par le frontend
-    // ─────────────────────────────────────────────
+    // Fix: ajout du calcul de riskScore (0-100) attendu par le frontend
     async getHighRiskPatients() {
         return this.userModel.aggregate([
             {
@@ -370,27 +356,7 @@ export class DashboardService {
         ]);
     }
 
-    // ─────────────────────────────────────────────
-    // 7. GLOBAL FOLLOWUP RATE
-    // ─────────────────────────────────────────────
-    async getGlobalFollowupRate() {
-        const patients = await this.userModel.countDocuments({ actif: true });
-        const responses = await this.questionnaireModel.aggregate([
-            { $group: { _id: null, total: { $sum: '$responsesCount' } } },
-        ]);
-        const totalResponses = responses[0]?.total ?? 0;
-
-        const rate = patients > 0 ? Math.round((totalResponses / patients) * 100) : 0;
-        return {
-            rate,
-            completed: totalResponses,
-            total: patients,
-        };
-    }
-
-    // ─────────────────────────────────────────────
     // 8. SERVER HEALTH
-    // ─────────────────────────────────────────────
     async getServerHealth() {
         const memoryUsage = process.memoryUsage();
         return {
@@ -406,9 +372,7 @@ export class DashboardService {
         };
     }
 
-    // ─────────────────────────────────────────────
     // 9. SECURITY STATS
-    // ─────────────────────────────────────────────
     async getSecurityStats() {
         return {
             rateLimit: { maxRequests: 10, window: '60 seconds' },
@@ -417,9 +381,7 @@ export class DashboardService {
         };
     }
 
-    // ─────────────────────────────────────────────
     // 10. ALERTS
-    // ─────────────────────────────────────────────
     async getAlerts() {
         type Alert = {
             type: string;
@@ -458,12 +420,7 @@ export class DashboardService {
         return alerts;
     }
 
-    // ─────────────────────────────────────────────
-    // 11. AI INSIGHTS
-    // FIX : appel Groq corrigé — chat.completions.create() au lieu de groqApi.(...)
-    //       modèle Groq valide (llama-3.3-70b-versatile)
-    //       parsing JSON robuste avec strip des backticks markdown
-    // ─────────────────────────────────────────────
+  
     async getAIInsightsDynamic(): Promise<AIInsight[]> {
         try {
             const totalResponsesAgg = await this.questionnaireModel.aggregate([
@@ -495,17 +452,14 @@ Retourne UNIQUEMENT un tableau JSON valide, sans texte ni balises markdown :
 ]
 `;
 
-            // FIX: utilisation correcte de l'API Groq via chat.completions.create()
             const completion = await this.groqApi.chat.completions.create({
-                model: 'llama-3.3-70b-versatile', // modèle Groq valide (pas gpt-4 qui est OpenAI)
+                model: 'llama-3.3-70b-versatile', 
                 messages: [{ role: 'user', content: prompt }],
                 temperature: 0.7,
                 max_tokens: 1024,
             });
 
             const raw = completion.choices[0]?.message?.content ?? '';
-
-            // FIX: strip des backticks markdown si le modèle en ajoute quand même
             const clean = raw.replace(/```(?:json)?/gi, '').trim();
 
             return JSON.parse(clean) as AIInsight[];
@@ -515,20 +469,13 @@ Retourne UNIQUEMENT un tableau JSON valide, sans texte ni balises markdown :
         }
     }
 
-    // ─────────────────────────────────────────────
-    // 12. INACTIVE PATIENTS
-    // FIX : ajout du calcul de daysSinceActivity attendu par le frontend
-    // ─────────────────────────────────────────────
+    
     async getInactivePatients() {
         return this.userModel.find({ actif: true, lastLogin: { $lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } })
             .select('firstName lastName email assignedDepartment lastLogin')
             .lean();
     }
 
-
-    // ─────────────────────────────────────────────
-    // 13. SERVICES OVERVIEW
-    // ─────────────────────────────────────────────
     async getServicesOverview() {
         const services = await this.serviceModel
             .find({ deletedAt: null })
