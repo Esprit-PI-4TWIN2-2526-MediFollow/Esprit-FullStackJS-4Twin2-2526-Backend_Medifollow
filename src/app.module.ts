@@ -17,6 +17,7 @@ import { AiModule } from './ai/ai.module';
 import { ServiceModule } from './service/service.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { SymptomsModule } from './symptoms/symptoms.module';
+import { VoiceCallsModule } from './voice-calls/voice-calls.module';
 @Module({
   imports: [
 
@@ -47,6 +48,7 @@ import { SymptomsModule } from './symptoms/symptoms.module';
     ServiceModule,
     DashboardModule,
     SymptomsModule,
+    VoiceCallsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
