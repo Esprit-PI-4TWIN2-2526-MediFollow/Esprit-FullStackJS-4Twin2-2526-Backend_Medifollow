@@ -7,6 +7,27 @@ export class UpdateSymptomDto {
   @IsOptional()
   title?: string;
 
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
+  medicalService?: string;
+
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  patientIds?: string[];
+
+  @IsString()
+  @IsOptional()
+  patientId?: string;
+
+  @IsString()
+  @IsOptional()
+  status?: string;
+
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;

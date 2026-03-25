@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { SymptomsService } from './symptoms.service';
 import { CreateSymptomDto } from './dto/create-symptom.dto';
 import { SubmitResponseDto } from './dto/submit-response.dto';
 import { GenerateSymptomDto } from './dto/generate-symptom.dto';
 import { UpdateSymptomDto } from './dto/update-symptom.dto';
+import { ResponseActionDto } from './dto/response-action.dto';
+import { JwtAuthGuard } from 'src/users/auth/jwt.guard';
 
 @Controller('symptoms')
 export class SymptomsController {
@@ -50,9 +52,27 @@ export class SymptomsController {
     return this.service.saveResponse(dto);
   }
 
+  @Get('response')
+  @UseGuards(JwtAuthGuard)
+  getResponses(@Req() req) {
+    return this.service.getResponsesForValidation(req.user);
+  }
+
+  @Get('response/nurse')
+  @UseGuards(JwtAuthGuard)
+  getNurseSafeResponses(@Req() req) {
+    return this.service.getResponsesForValidation(req.user);
+  }
+
   @Get('response/today/:patientId')
   getTodayResponse(@Param('patientId') patientId: string) {
     return this.service.getTodayResponse(patientId);
+  }
+
+  @Get('response/by-date/:date')
+  @UseGuards(JwtAuthGuard)
+  getByDate(@Param('date') date: string, @Req() req) {
+    return this.service.getByDate(this.getRequestUserId(req), date);
   }
 
   @Get('response/:patientId')
@@ -60,8 +80,60 @@ export class SymptomsController {
     return this.service.getPatientResponses(patientId);
   }
 
+  @Get('nurse/responses')
+  @UseGuards(JwtAuthGuard)
+  getNurseResponses(@Req() req) {
+    return this.service.getNurseResponses(req.user);
+  }
+
+  @Get('nurse/responses/pending')
+  @UseGuards(JwtAuthGuard)
+  getPendingNurseResponses(@Req() req) {
+    return this.service.getPendingNurseResponses(req.user);
+  }
+
+  @Get('nurse/responses/validated')
+  @UseGuards(JwtAuthGuard)
+  getValidatedNurseResponses(@Req() req) {
+    return this.service.getValidatedNurseResponses(req.user);
+  }
+
+  @Get('nurse/responses/:id')
+  @UseGuards(JwtAuthGuard)
+  getNurseResponseById(@Param('id') id: string, @Req() req) {
+    return this.service.getNurseResponseById(req.user, id);
+  }
+
+  @Patch('response/:id/validate')
+  @UseGuards(JwtAuthGuard)
+  patchValidateResponse(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
+    return this.service.validateResponse(req.user, id, dto);
+  }
+
+  @Patch('response/:id/signal-problem')
+  @UseGuards(JwtAuthGuard)
+  patchSignalProblem(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
+    return this.service.reportIssue(req.user, id, dto);
+  }
+
+  @Post('nurse/responses/:id/validate')
+  @UseGuards(JwtAuthGuard)
+  validateResponse(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
+    return this.service.validateResponse(req.user, id, dto);
+  }
+
+  @Post('nurse/responses/:id/report-issue')
+  @UseGuards(JwtAuthGuard)
+  reportIssue(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
+    return this.service.reportIssue(req.user, id, dto);
+  }
+
   @Post('generate')
   generate(@Body() dto: GenerateSymptomDto) {
     return this.service.generateQuestions(dto);
+  }
+
+  private getRequestUserId(req: any): string {
+    return req?.user?.sub ?? req?.user?.userId;
   }
 }

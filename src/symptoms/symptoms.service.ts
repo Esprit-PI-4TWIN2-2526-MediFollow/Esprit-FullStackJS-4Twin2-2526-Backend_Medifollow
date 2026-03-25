@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -15,6 +17,8 @@ import { GenerateSymptomDto } from './dto/generate-symptom.dto';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateSymptomDto } from './dto/update-symptom.dto';
 import { Question, QuestionType } from './schemas/question.schema';
+import { ResponseActionDto } from './dto/response-action.dto';
+import { User, UserDocument } from 'src/users/users.schema';
 
 // ── Mapping: medical service → clinical focus areas ──────────────────────────
 //
@@ -117,6 +121,44 @@ const FRONTEND_QUESTION_TYPES: FrontendQuestionType[] = [
   'date',
 ];
 
+type SymptomResponseByDateItem = {
+  formId: Symptom | Types.ObjectId | string;
+  answers: Array<{
+    question: string;
+    answer: string | number | boolean | string[] | null;
+  }>;
+  createdAt: Date;
+};
+
+type SymptomVitalsView = {
+  bloodPressure: string | null;
+  heartRate: number | null;
+  temperature: number | null;
+  weight: number | null;
+};
+
+type NurseVisibleResponseItem = {
+  _id: string;
+  patientId: string;
+  patientName: string;
+  patientDepartment: string;
+  patientEmail: string;
+  submittedAt: Date;
+  createdAt: Date;
+  updatedAt: Date | null;
+  vitals: SymptomVitalsView;
+  answers: Array<{
+    question: string;
+    answer: string | number | boolean | string[] | null;
+  }>;
+  validated: boolean;
+  validatedBy: string | null;
+  validatedByName: string | null;
+  validatedAt: Date | null;
+  validationNote: string;
+  issueReported: boolean;
+};
+
 @Injectable()
 export class SymptomsService {
   private client = new Groq({
@@ -128,35 +170,60 @@ export class SymptomsService {
     private symptomModel: Model<SymptomDocument>,
     @InjectModel(SymptomResponse.name)
     private symptomResponseModel: Model<SymptomResponseDocument>,
+    @InjectModel(User.name)
+    private userModel: Model<UserDocument>,
   ) {}
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateSymptomDto): Promise<Symptom> {
+  async create(dto: CreateSymptomDto): Promise<Record<string, unknown>> {
     console.log(dto);
 
-    const questions = this.normalizeQuestions(dto.questions ?? []);
-
-    if (dto.isActive !== false) {
-      const deactivateFilter: Record<string, unknown> = { isActive: true };
-      deactivateFilter.patientId = dto.patientId;
-
-      await this.symptomModel.updateMany(deactivateFilter, { $set: { isActive: false } }).exec();
+    const title = dto.title?.trim();
+    if (!title) {
+      throw new BadRequestException('title must not be empty');
     }
 
-    return this.symptomModel.create({
-      title: dto.title.trim(),
-      patientId: dto.patientId,
+    const patientIds = this.normalizePatientIds(dto.patientIds, dto.patientId);
+    const questions = this.normalizeQuestions(dto.questions ?? []);
+    const status = this.normalizeStatus(dto.status, dto.isActive);
+    const isActive = status === 'active';
+
+    if (isActive) {
+      await this.symptomModel
+        .updateMany(
+          {
+            isActive: true,
+            $or: [
+              { patientIds: { $in: patientIds } },
+              { patientId: { $in: patientIds } },
+            ],
+          },
+          { $set: { isActive: false, status: 'inactive' } },
+        )
+        .exec();
+    }
+
+    const symptom = await this.symptomModel.create({
+      title,
+      description: dto.description?.trim() ?? '',
+      medicalService: dto.medicalService?.trim() ?? '',
+      patientIds,
+      patientId: patientIds[0],
       questions,
-      isActive: dto.isActive ?? true,
+      isActive,
+      status,
     });
+
+    return this.serializeSymptomForm(symptom);
   }
 
-  async findAll(): Promise<Symptom[]> {
-    return this.symptomModel.find().sort({ createdAt: -1 }).exec();
+  async findAll(): Promise<Record<string, unknown>[]> {
+    const symptoms = await this.symptomModel.find().sort({ createdAt: -1 }).exec();
+    return symptoms.map((symptom) => this.serializeSymptomForm(symptom));
   }
 
-  async findById(id: string): Promise<Symptom> {
+  async findById(id: string): Promise<Record<string, unknown>> {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid symptom form id');
     }
@@ -166,10 +233,10 @@ export class SymptomsService {
       throw new NotFoundException(`Symptom form ${id} not found`);
     }
 
-    return symptom;
+    return this.serializeSymptomForm(symptom);
   }
 
-  async getLatestActive(): Promise<Symptom> {
+  async getLatestActive(): Promise<Record<string, unknown>> {
     const symptom = await this.symptomModel
       .findOne({ isActive: true })
       .sort({ createdAt: -1 })
@@ -179,10 +246,10 @@ export class SymptomsService {
       throw new NotFoundException('No active symptom form found');
     }
 
-    return symptom;
+    return this.serializeSymptomForm(symptom);
   }
 
-  async findFormByPatient(patientId: string): Promise<Symptom> {
+  async findFormByPatient(patientId: string): Promise<Record<string, unknown>> {
     const normalizedPatientId = patientId?.trim();
 
     if (!normalizedPatientId) {
@@ -191,7 +258,10 @@ export class SymptomsService {
 
     const symptom = await this.symptomModel
       .findOne({
-        patientId: normalizedPatientId,
+        $or: [
+          { patientIds: normalizedPatientId },
+          { patientId: normalizedPatientId },
+        ],
         isActive: true,
       })
       .sort({ createdAt: -1, _id: -1 })
@@ -201,10 +271,10 @@ export class SymptomsService {
       throw new NotFoundException(`No active symptom form found for patient ${normalizedPatientId}`);
     }
 
-    return symptom;
+    return this.serializeSymptomForm(symptom);
   }
 
-  async update(id: string, dto: UpdateSymptomDto): Promise<Symptom> {
+  async update(id: string, dto: UpdateSymptomDto): Promise<Record<string, unknown>> {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid symptom form id');
     }
@@ -222,17 +292,48 @@ export class SymptomsService {
       updateData.title = title;
     }
 
+    if (typeof dto.description === 'string') {
+      updateData.description = dto.description.trim();
+    }
+
+    if (typeof dto.medicalService === 'string') {
+      updateData.medicalService = dto.medicalService.trim();
+    }
+
+    if (dto.patientIds !== undefined || dto.patientId !== undefined) {
+      const patientIds = this.normalizePatientIds(dto.patientIds, dto.patientId);
+      updateData.patientIds = patientIds;
+      updateData.patientId = patientIds[0];
+    }
+
     if (dto.questions !== undefined) {
       updateData.questions = this.normalizeQuestions(dto.questions);
     }
 
-    if (typeof dto.isActive === 'boolean') {
-      updateData.isActive = dto.isActive;
-      if (dto.isActive) {
-        await this.symptomModel
-          .updateMany({ _id: { $ne: id }, isActive: true }, { $set: { isActive: false } })
-          .exec();
-      }
+    const nextStatus = this.resolveNextStatus(dto, existing);
+    if (nextStatus !== null) {
+      updateData.status = nextStatus;
+      updateData.isActive = nextStatus === 'active';
+    }
+
+    if (updateData.isActive) {
+      const patientIdsForDeactivation =
+        updateData.patientIds ??
+        this.getSymptomPatientIds(existing);
+
+      await this.symptomModel
+        .updateMany(
+          {
+            _id: { $ne: id },
+            isActive: true,
+            $or: [
+              { patientIds: { $in: patientIdsForDeactivation } },
+              { patientId: { $in: patientIdsForDeactivation } },
+            ],
+          },
+          { $set: { isActive: false, status: 'inactive' } },
+        )
+        .exec();
     }
 
     const updated = await this.symptomModel
@@ -241,7 +342,7 @@ export class SymptomsService {
 
     if (!updated) throw new NotFoundException(`Symptom form ${id} not found`);
 
-    return updated;
+    return this.serializeSymptomForm(updated);
   }
 
   async remove(id: string): Promise<void> {
@@ -279,18 +380,24 @@ export class SymptomsService {
     const responseDate = this.normalizeDate(dto.date ? new Date(dto.date) : new Date());
 
     if (normalizedPatientId) {
-      const existingTodayResponse = await this.symptomResponseModel
-        .findOne({
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
+
+      const count = await this.symptomResponseModel
+        .countDocuments({
           patientId: normalizedPatientId,
-          date: {
-            $gte: this.getStartOfDay(responseDate),
-            $lt: this.getEndOfDay(responseDate),
+          createdAt: {
+            $gte: todayStart,
+            $lte: todayEnd,
           },
         })
         .exec();
 
-      if (existingTodayResponse) {
-        throw new BadRequestException('Patient has already submitted a response today');
+      if (count >= 3) {
+        throw new BadRequestException('Maximum 3 submissions per day reached');
       }
     }
 
@@ -325,6 +432,13 @@ export class SymptomsService {
       ...(normalizedPatientId ? { patientId: normalizedPatientId } : {}),
       answers: normalizedAnswers,
       date: responseDate,
+      vitals: this.extractVitals(symptomForm, normalizedAnswers),
+      validated: false,
+      validatedBy: null,
+      validatedByName: null,
+      validatedAt: null,
+      validationNote: '',
+      issueReported: false,
     });
 
     return response.save();
@@ -368,6 +482,138 @@ export class SymptomsService {
       .populate('symptomFormId', 'title isActive')
       .sort({ createdAt: -1 })
       .exec();
+  }
+
+  async getByDate(patientId: string, date: string): Promise<SymptomResponseByDateItem[]> {
+    const normalizedPatientId = patientId?.trim();
+
+    if (!normalizedPatientId) {
+      throw new BadRequestException('Invalid patientId');
+    }
+
+    const start = new Date(date);
+    if (Number.isNaN(start.getTime())) {
+      throw new BadRequestException('Invalid date');
+    }
+
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
+
+    const responses = await this.symptomResponseModel
+      .find({
+        patientId: normalizedPatientId,
+        createdAt: {
+          $gte: start,
+          $lte: end,
+        },
+      })
+      .populate('symptomFormId')
+      .sort({ createdAt: -1, _id: -1 })
+      .exec();
+
+    return responses.map((response) => {
+      const form =
+        response.symptomFormId &&
+        typeof response.symptomFormId === 'object' &&
+        'questions' in response.symptomFormId
+          ? (response.symptomFormId as unknown as Symptom)
+          : null;
+
+      const questionMap = new Map(
+        (form?.questions ?? []).map((question) => [question._id?.toString(), question.label]),
+      );
+
+      return {
+        formId: response.symptomFormId,
+        answers: response.answers.map((answer) => ({
+          question: questionMap.get(answer.questionId) ?? answer.questionId,
+          answer: answer.value,
+        })),
+        createdAt: response.createdAt ?? response.date,
+      };
+    });
+  }
+
+  async getResponsesForValidation(
+    authUser: { sub?: string; userId?: string },
+  ): Promise<NurseVisibleResponseItem[]> {
+    return this.listNurseResponses(authUser);
+  }
+
+  async getNurseResponses(authUser: { sub?: string; userId?: string }): Promise<NurseVisibleResponseItem[]> {
+    return this.listNurseResponses(authUser);
+  }
+
+  async getPendingNurseResponses(
+    authUser: { sub?: string; userId?: string },
+  ): Promise<NurseVisibleResponseItem[]> {
+    return this.listNurseResponses(authUser, false);
+  }
+
+  async getValidatedNurseResponses(
+    authUser: { sub?: string; userId?: string },
+  ): Promise<NurseVisibleResponseItem[]> {
+    return this.listNurseResponses(authUser, true);
+  }
+
+  async getNurseResponseById(
+    authUser: { sub?: string; userId?: string },
+    responseId: string,
+  ): Promise<NurseVisibleResponseItem> {
+    const nurse = await this.getNurseUser(authUser);
+    const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
+    const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
+
+    return this.formatNurseResponse(response, patient);
+  }
+
+  async validateResponse(
+    authUser: { sub?: string; userId?: string },
+    responseId: string,
+    dto: ResponseActionDto,
+  ): Promise<NurseVisibleResponseItem> {
+    const nurse = await this.getNurseUser(authUser);
+    const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
+    const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
+
+    if (response.validated) {
+      throw new ConflictException('Response already validated');
+    }
+
+    response.validated = true;
+    response.validatedBy = nurse._id.toString();
+    response.validatedByName = this.buildUserDisplayName(nurse);
+    response.validatedAt = new Date();
+    response.validationNote = dto.note?.trim() ?? '';
+
+    await response.save();
+
+    return this.formatNurseResponse(response, patient);
+  }
+
+  async reportIssue(
+    authUser: { sub?: string; userId?: string },
+    responseId: string,
+    dto: ResponseActionDto,
+  ): Promise<NurseVisibleResponseItem> {
+    const nurse = await this.getNurseUser(authUser);
+    const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
+    const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
+
+    response.issueReported = true;
+
+    const note = dto.note?.trim();
+    if (note) {
+      response.validationNote = response.validationNote
+        ? `${response.validationNote}\nIssue reported: ${note}`
+        : note;
+    }
+
+    await response.save();
+
+    return this.formatNurseResponse(response, patient);
   }
 
   // ── AI Question Generation ────────────────────────────────────────────────────
@@ -680,6 +926,329 @@ Return raw JSON array only.
     }
 
     return [`Option ${index * 2 + 1}`, `Option ${index * 2 + 2}`];
+  }
+
+  private async listNurseResponses(
+    authUser: { sub?: string; userId?: string },
+    validated?: boolean,
+  ): Promise<NurseVisibleResponseItem[]> {
+    const nurse = await this.getNurseUser(authUser);
+    const nurseDepartment = this.normalizeDepartment(nurse.assignedDepartment);
+    const patients = await this.userModel
+      .find({
+        assignedDepartment: {
+          $regex: `^${this.escapeRegex(nurse.assignedDepartment ?? '')}$`,
+          $options: 'i',
+        },
+      })
+      .select('_id firstName lastName email assignedDepartment')
+      .exec();
+
+    const visiblePatients = patients.filter(
+      (patient) => this.normalizeDepartment(patient.assignedDepartment) === nurseDepartment,
+    );
+
+    const patientIds = visiblePatients.map((patient) => patient._id.toString());
+    if (patientIds.length === 0) {
+      return [];
+    }
+
+    const query: Record<string, unknown> = {
+      patientId: { $in: patientIds },
+    };
+
+    if (typeof validated === 'boolean') {
+      query.validated = validated;
+    }
+
+    const responses = await this.symptomResponseModel
+      .find(query)
+      .populate('symptomFormId')
+      .sort({ createdAt: -1, _id: -1 })
+      .exec();
+
+    const patientMap = new Map(visiblePatients.map((patient) => [patient._id.toString(), patient]));
+
+    return responses
+      .map((response) => {
+        const patient = response.patientId ? patientMap.get(response.patientId) : null;
+        if (!patient) {
+          return null;
+        }
+
+        return this.formatNurseResponse(response, patient);
+      })
+      .filter((item): item is NurseVisibleResponseItem => item !== null);
+  }
+
+  private async getNurseUser(authUser: { sub?: string; userId?: string }): Promise<UserDocument> {
+    const authUserId = this.extractAuthUserId(authUser);
+
+    if (!authUserId || !isValidObjectId(authUserId)) {
+      throw new ForbiddenException('Invalid authenticated user');
+    }
+
+    const nurse = await this.userModel.findById(authUserId).exec();
+    if (!nurse) {
+      throw new NotFoundException('Authenticated nurse not found');
+    }
+
+    if (!nurse.assignedDepartment?.trim()) {
+      throw new ForbiddenException('Nurse department is not configured');
+    }
+
+    return nurse;
+  }
+
+  private async findVisibleResponseForNurse(
+    responseId: string,
+    department: string,
+  ): Promise<SymptomResponseDocument> {
+    if (!responseId || !isValidObjectId(responseId)) {
+      throw new BadRequestException('Invalid symptom response id');
+    }
+
+    const response = await this.symptomResponseModel
+      .findById(responseId)
+      .populate('symptomFormId')
+      .exec();
+
+    if (!response) {
+      throw new NotFoundException(`Symptom response ${responseId} not found`);
+    }
+
+    await this.getPatientForVisibleResponse(response, department);
+
+    return response;
+  }
+
+  private async getPatientForVisibleResponse(
+    response: SymptomResponseDocument,
+    department: string,
+  ): Promise<UserDocument> {
+    const patientId = response.patientId?.trim();
+
+    if (!patientId || !isValidObjectId(patientId)) {
+      throw new ForbiddenException('Response has no valid patient reference');
+    }
+
+    const patient = await this.userModel
+      .findById(patientId)
+      .select('_id firstName lastName email assignedDepartment')
+      .exec();
+
+    if (!patient) {
+      throw new NotFoundException(`Patient ${patientId} not found`);
+    }
+
+    if (this.normalizeDepartment(patient.assignedDepartment) !== this.normalizeDepartment(department)) {
+      throw new ForbiddenException('You cannot access responses outside your department');
+    }
+
+    return patient;
+  }
+
+  private formatNurseResponse(
+    response: SymptomResponseDocument,
+    patient: UserDocument,
+  ): NurseVisibleResponseItem {
+    const form =
+      response.symptomFormId &&
+      typeof response.symptomFormId === 'object' &&
+      'questions' in response.symptomFormId
+        ? (response.symptomFormId as unknown as Symptom)
+        : null;
+
+    const questionMap = new Map(
+      (form?.questions ?? []).map((question) => [question._id?.toString(), question.label]),
+    );
+
+    return {
+      _id: response._id.toString(),
+      patientId: patient._id.toString(),
+      patientName: this.buildUserDisplayName(patient),
+      patientDepartment: patient.assignedDepartment ?? '',
+      patientEmail: patient.email ?? '',
+      submittedAt: response.createdAt ?? response.date,
+      createdAt: response.createdAt ?? response.date,
+      updatedAt: response.updatedAt ?? null,
+      vitals: {
+        bloodPressure: response.vitals?.bloodPressure ?? null,
+        heartRate: response.vitals?.heartRate ?? null,
+        temperature: response.vitals?.temperature ?? null,
+        weight: response.vitals?.weight ?? null,
+      },
+      answers: response.answers.map((answer) => ({
+        question: questionMap.get(answer.questionId) ?? answer.questionId,
+        answer: answer.value,
+      })),
+      validated: response.validated ?? false,
+      validatedBy: response.validatedBy ?? null,
+      validatedByName: response.validatedByName ?? null,
+      validatedAt: response.validatedAt ?? null,
+      validationNote: response.validationNote ?? '',
+      issueReported: response.issueReported ?? false,
+    };
+  }
+
+  private buildUserDisplayName(
+    user: Pick<UserDocument, 'firstName' | 'lastName' | 'email'>,
+  ): string {
+    const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+    return fullName || user.email || 'Unknown user';
+  }
+
+  private extractAuthUserId(authUser: { sub?: string; userId?: string } | null | undefined): string {
+    return authUser?.sub ?? authUser?.userId ?? '';
+  }
+
+  private normalizeDepartment(department: string | null | undefined): string {
+    return (department ?? '').trim().toLowerCase();
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private extractVitals(
+    symptomForm: Symptom,
+    answers: Array<{ questionId: string; value: string | number | boolean | string[] | null }>,
+  ): SymptomVitalsView {
+    const questionMap = new Map(
+      symptomForm.questions.map((question) => [question._id?.toString(), question.label.toLowerCase()]),
+    );
+
+    const vitals: SymptomVitalsView = {
+      bloodPressure: null,
+      heartRate: null,
+      temperature: null,
+      weight: null,
+    };
+
+    for (const answer of answers) {
+      const label = questionMap.get(answer.questionId) ?? '';
+
+      if (!label) {
+        continue;
+      }
+
+      if (!vitals.bloodPressure && (label.includes('blood pressure') || label === 'bp')) {
+        vitals.bloodPressure = this.stringifyAnswerValue(answer.value);
+      }
+
+      if (vitals.heartRate === null && (label.includes('heart rate') || label.includes('pulse'))) {
+        vitals.heartRate = this.toNullableNumber(answer.value);
+      }
+
+      if (vitals.temperature === null && label.includes('temp')) {
+        vitals.temperature = this.toNullableNumber(answer.value);
+      }
+
+      if (vitals.weight === null && label.includes('weight')) {
+        vitals.weight = this.toNullableNumber(answer.value);
+      }
+    }
+
+    return vitals;
+  }
+
+  private toNullableNumber(value: string | number | boolean | string[] | null): number | null {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+  }
+
+  private stringifyAnswerValue(value: string | number | boolean | string[] | null): string | null {
+    if (typeof value === 'string') {
+      return value.trim() || null;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    if (Array.isArray(value)) {
+      return value.join(', ').trim() || null;
+    }
+
+    return null;
+  }
+
+  private normalizePatientIds(patientIds?: string[], patientId?: string): string[] {
+    const normalizedPatientIds = [
+      ...(Array.isArray(patientIds) ? patientIds : []),
+      ...(typeof patientId === 'string' ? [patientId] : []),
+    ]
+      .map((value) => value?.trim())
+      .filter((value): value is string => !!value);
+
+    const uniquePatientIds = normalizedPatientIds.filter(
+      (value, index, array) => array.indexOf(value) === index,
+    );
+
+    if (uniquePatientIds.length === 0) {
+      throw new BadRequestException('patientIds must contain at least one patient id');
+    }
+
+    return uniquePatientIds;
+  }
+
+  private normalizeStatus(status?: string, isActive?: boolean): string {
+    if (typeof status === 'string' && status.trim()) {
+      return status.trim();
+    }
+
+    if (typeof isActive === 'boolean') {
+      return isActive ? 'active' : 'inactive';
+    }
+
+    return 'active';
+  }
+
+  private resolveNextStatus(dto: UpdateSymptomDto, existing: Symptom): string | null {
+    if (typeof dto.status === 'string' && dto.status.trim()) {
+      return dto.status.trim();
+    }
+
+    if (typeof dto.isActive === 'boolean') {
+      return dto.isActive ? 'active' : 'inactive';
+    }
+
+    if (dto.patientIds !== undefined || dto.patientId !== undefined) {
+      return existing.status ?? (existing.isActive ? 'active' : 'inactive');
+    }
+
+    return null;
+  }
+
+  private getSymptomPatientIds(symptom: Symptom): string[] {
+    return this.normalizeExistingPatientIds(symptom.patientIds, symptom.patientId);
+  }
+
+  private normalizeExistingPatientIds(patientIds?: string[], patientId?: string): string[] {
+    return [
+      ...(Array.isArray(patientIds) ? patientIds : []),
+      ...(typeof patientId === 'string' && patientId.trim() ? [patientId.trim()] : []),
+    ].filter((value, index, array): value is string => !!value && array.indexOf(value) === index);
+  }
+
+  private serializeSymptomForm(symptom: SymptomDocument): Record<string, unknown> {
+    const serialized = symptom.toObject();
+    const patientIds = this.normalizeExistingPatientIds(serialized.patientIds, serialized.patientId);
+    const { patientId, ...rest } = serialized;
+
+    return {
+      ...rest,
+      patientIds,
+      status: serialized.status ?? (serialized.isActive ? 'active' : 'inactive'),
+    };
   }
 
   private normalizeDate(date: Date): Date {

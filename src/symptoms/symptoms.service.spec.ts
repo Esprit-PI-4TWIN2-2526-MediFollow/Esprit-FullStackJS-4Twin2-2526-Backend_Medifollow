@@ -3,6 +3,7 @@ import { SymptomsService } from './symptoms.service';
 import { getModelToken } from '@nestjs/mongoose';
 import { Symptom } from './schemas/symptom.schema';
 import { SymptomResponse } from './schemas/symptom-response.schema';
+import { User } from 'src/users/users.schema';
 
 describe('SymptomsService', () => {
   let service: SymptomsService;
@@ -17,6 +18,10 @@ describe('SymptomsService', () => {
         },
         {
           provide: getModelToken(SymptomResponse.name),
+          useValue: {},
+        },
+        {
+          provide: getModelToken(User.name),
           useValue: {},
         },
       ],
