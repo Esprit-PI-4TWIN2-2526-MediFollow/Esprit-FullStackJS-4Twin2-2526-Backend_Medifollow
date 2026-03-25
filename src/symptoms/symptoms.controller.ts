@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { SymptomsService } from './symptoms.service';
 import { CreateSymptomDto } from './dto/create-symptom.dto';
 import { SubmitResponseDto } from './dto/submit-response.dto';
@@ -52,6 +52,18 @@ export class SymptomsController {
     return this.service.saveResponse(dto);
   }
 
+  @Get('response')
+  @UseGuards(JwtAuthGuard)
+  getResponses(@Req() req) {
+    return this.service.getResponsesForValidation(req.user);
+  }
+
+  @Get('response/nurse')
+  @UseGuards(JwtAuthGuard)
+  getNurseSafeResponses(@Req() req) {
+    return this.service.getResponsesForValidation(req.user);
+  }
+
   @Get('response/today/:patientId')
   getTodayResponse(@Param('patientId') patientId: string) {
     return this.service.getTodayResponse(patientId);
@@ -90,6 +102,18 @@ export class SymptomsController {
   @UseGuards(JwtAuthGuard)
   getNurseResponseById(@Param('id') id: string, @Req() req) {
     return this.service.getNurseResponseById(req.user, id);
+  }
+
+  @Patch('response/:id/validate')
+  @UseGuards(JwtAuthGuard)
+  patchValidateResponse(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
+    return this.service.validateResponse(req.user, id, dto);
+  }
+
+  @Patch('response/:id/signal-problem')
+  @UseGuards(JwtAuthGuard)
+  patchSignalProblem(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
+    return this.service.reportIssue(req.user, id, dto);
   }
 
   @Post('nurse/responses/:id/validate')

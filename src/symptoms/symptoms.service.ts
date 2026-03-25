@@ -142,19 +142,21 @@ type NurseVisibleResponseItem = {
   patientId: string;
   patientName: string;
   patientDepartment: string;
+  patientEmail: string;
   submittedAt: Date;
+  createdAt: Date;
+  updatedAt: Date | null;
   vitals: SymptomVitalsView;
+  answers: Array<{
+    question: string;
+    answer: string | number | boolean | string[] | null;
+  }>;
   validated: boolean;
   validatedBy: string | null;
   validatedByName: string | null;
   validatedAt: Date | null;
   validationNote: string;
   issueReported: boolean;
-  formId?: string;
-  answers?: Array<{
-    question: string;
-    answer: string | number | boolean | string[] | null;
-  }>;
 };
 
 @Injectable()
@@ -174,31 +176,54 @@ export class SymptomsService {
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateSymptomDto): Promise<Symptom> {
+  async create(dto: CreateSymptomDto): Promise<Record<string, unknown>> {
     console.log(dto);
 
-    const questions = this.normalizeQuestions(dto.questions ?? []);
-
-    if (dto.isActive !== false) {
-      const deactivateFilter: Record<string, unknown> = { isActive: true };
-      deactivateFilter.patientId = dto.patientId;
-
-      await this.symptomModel.updateMany(deactivateFilter, { $set: { isActive: false } }).exec();
+    const title = dto.title?.trim();
+    if (!title) {
+      throw new BadRequestException('title must not be empty');
     }
 
-    return this.symptomModel.create({
-      title: dto.title.trim(),
-      patientId: dto.patientId,
+    const patientIds = this.normalizePatientIds(dto.patientIds, dto.patientId);
+    const questions = this.normalizeQuestions(dto.questions ?? []);
+    const status = this.normalizeStatus(dto.status, dto.isActive);
+    const isActive = status === 'active';
+
+    if (isActive) {
+      await this.symptomModel
+        .updateMany(
+          {
+            isActive: true,
+            $or: [
+              { patientIds: { $in: patientIds } },
+              { patientId: { $in: patientIds } },
+            ],
+          },
+          { $set: { isActive: false, status: 'inactive' } },
+        )
+        .exec();
+    }
+
+    const symptom = await this.symptomModel.create({
+      title,
+      description: dto.description?.trim() ?? '',
+      medicalService: dto.medicalService?.trim() ?? '',
+      patientIds,
+      patientId: patientIds[0],
       questions,
-      isActive: dto.isActive ?? true,
+      isActive,
+      status,
     });
+
+    return this.serializeSymptomForm(symptom);
   }
 
-  async findAll(): Promise<Symptom[]> {
-    return this.symptomModel.find().sort({ createdAt: -1 }).exec();
+  async findAll(): Promise<Record<string, unknown>[]> {
+    const symptoms = await this.symptomModel.find().sort({ createdAt: -1 }).exec();
+    return symptoms.map((symptom) => this.serializeSymptomForm(symptom));
   }
 
-  async findById(id: string): Promise<Symptom> {
+  async findById(id: string): Promise<Record<string, unknown>> {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid symptom form id');
     }
@@ -208,10 +233,10 @@ export class SymptomsService {
       throw new NotFoundException(`Symptom form ${id} not found`);
     }
 
-    return symptom;
+    return this.serializeSymptomForm(symptom);
   }
 
-  async getLatestActive(): Promise<Symptom> {
+  async getLatestActive(): Promise<Record<string, unknown>> {
     const symptom = await this.symptomModel
       .findOne({ isActive: true })
       .sort({ createdAt: -1 })
@@ -221,10 +246,10 @@ export class SymptomsService {
       throw new NotFoundException('No active symptom form found');
     }
 
-    return symptom;
+    return this.serializeSymptomForm(symptom);
   }
 
-  async findFormByPatient(patientId: string): Promise<Symptom> {
+  async findFormByPatient(patientId: string): Promise<Record<string, unknown>> {
     const normalizedPatientId = patientId?.trim();
 
     if (!normalizedPatientId) {
@@ -233,7 +258,10 @@ export class SymptomsService {
 
     const symptom = await this.symptomModel
       .findOne({
-        patientId: normalizedPatientId,
+        $or: [
+          { patientIds: normalizedPatientId },
+          { patientId: normalizedPatientId },
+        ],
         isActive: true,
       })
       .sort({ createdAt: -1, _id: -1 })
@@ -243,10 +271,10 @@ export class SymptomsService {
       throw new NotFoundException(`No active symptom form found for patient ${normalizedPatientId}`);
     }
 
-    return symptom;
+    return this.serializeSymptomForm(symptom);
   }
 
-  async update(id: string, dto: UpdateSymptomDto): Promise<Symptom> {
+  async update(id: string, dto: UpdateSymptomDto): Promise<Record<string, unknown>> {
     if (!id || !isValidObjectId(id)) {
       throw new BadRequestException('Invalid symptom form id');
     }
@@ -264,17 +292,48 @@ export class SymptomsService {
       updateData.title = title;
     }
 
+    if (typeof dto.description === 'string') {
+      updateData.description = dto.description.trim();
+    }
+
+    if (typeof dto.medicalService === 'string') {
+      updateData.medicalService = dto.medicalService.trim();
+    }
+
+    if (dto.patientIds !== undefined || dto.patientId !== undefined) {
+      const patientIds = this.normalizePatientIds(dto.patientIds, dto.patientId);
+      updateData.patientIds = patientIds;
+      updateData.patientId = patientIds[0];
+    }
+
     if (dto.questions !== undefined) {
       updateData.questions = this.normalizeQuestions(dto.questions);
     }
 
-    if (typeof dto.isActive === 'boolean') {
-      updateData.isActive = dto.isActive;
-      if (dto.isActive) {
-        await this.symptomModel
-          .updateMany({ _id: { $ne: id }, isActive: true }, { $set: { isActive: false } })
-          .exec();
-      }
+    const nextStatus = this.resolveNextStatus(dto, existing);
+    if (nextStatus !== null) {
+      updateData.status = nextStatus;
+      updateData.isActive = nextStatus === 'active';
+    }
+
+    if (updateData.isActive) {
+      const patientIdsForDeactivation =
+        updateData.patientIds ??
+        this.getSymptomPatientIds(existing);
+
+      await this.symptomModel
+        .updateMany(
+          {
+            _id: { $ne: id },
+            isActive: true,
+            $or: [
+              { patientIds: { $in: patientIdsForDeactivation } },
+              { patientId: { $in: patientIdsForDeactivation } },
+            ],
+          },
+          { $set: { isActive: false, status: 'inactive' } },
+        )
+        .exec();
     }
 
     const updated = await this.symptomModel
@@ -283,7 +342,7 @@ export class SymptomsService {
 
     if (!updated) throw new NotFoundException(`Symptom form ${id} not found`);
 
-    return updated;
+    return this.serializeSymptomForm(updated);
   }
 
   async remove(id: string): Promise<void> {
@@ -477,6 +536,12 @@ export class SymptomsService {
     });
   }
 
+  async getResponsesForValidation(
+    authUser: { sub?: string; userId?: string },
+  ): Promise<NurseVisibleResponseItem[]> {
+    return this.listNurseResponses(authUser);
+  }
+
   async getNurseResponses(authUser: { sub?: string; userId?: string }): Promise<NurseVisibleResponseItem[]> {
     return this.listNurseResponses(authUser);
   }
@@ -501,7 +566,7 @@ export class SymptomsService {
     const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
     const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
 
-    return this.formatNurseResponse(response, patient, true);
+    return this.formatNurseResponse(response, patient);
   }
 
   async validateResponse(
@@ -525,7 +590,7 @@ export class SymptomsService {
 
     await response.save();
 
-    return this.formatNurseResponse(response, patient, true);
+    return this.formatNurseResponse(response, patient);
   }
 
   async reportIssue(
@@ -548,7 +613,7 @@ export class SymptomsService {
 
     await response.save();
 
-    return this.formatNurseResponse(response, patient, true);
+    return this.formatNurseResponse(response, patient);
   }
 
   // ── AI Question Generation ────────────────────────────────────────────────────
@@ -868,12 +933,22 @@ Return raw JSON array only.
     validated?: boolean,
   ): Promise<NurseVisibleResponseItem[]> {
     const nurse = await this.getNurseUser(authUser);
+    const nurseDepartment = this.normalizeDepartment(nurse.assignedDepartment);
     const patients = await this.userModel
-      .find({ assignedDepartment: nurse.assignedDepartment })
+      .find({
+        assignedDepartment: {
+          $regex: `^${this.escapeRegex(nurse.assignedDepartment ?? '')}$`,
+          $options: 'i',
+        },
+      })
       .select('_id firstName lastName email assignedDepartment')
       .exec();
 
-    const patientIds = patients.map((patient) => patient._id.toString());
+    const visiblePatients = patients.filter(
+      (patient) => this.normalizeDepartment(patient.assignedDepartment) === nurseDepartment,
+    );
+
+    const patientIds = visiblePatients.map((patient) => patient._id.toString());
     if (patientIds.length === 0) {
       return [];
     }
@@ -892,7 +967,7 @@ Return raw JSON array only.
       .sort({ createdAt: -1, _id: -1 })
       .exec();
 
-    const patientMap = new Map(patients.map((patient) => [patient._id.toString(), patient]));
+    const patientMap = new Map(visiblePatients.map((patient) => [patient._id.toString(), patient]));
 
     return responses
       .map((response) => {
@@ -901,7 +976,7 @@ Return raw JSON array only.
           return null;
         }
 
-        return this.formatNurseResponse(response, patient, false);
+        return this.formatNurseResponse(response, patient);
       })
       .filter((item): item is NurseVisibleResponseItem => item !== null);
   }
@@ -966,7 +1041,7 @@ Return raw JSON array only.
       throw new NotFoundException(`Patient ${patientId} not found`);
     }
 
-    if ((patient.assignedDepartment ?? '').trim() !== department.trim()) {
+    if (this.normalizeDepartment(patient.assignedDepartment) !== this.normalizeDepartment(department)) {
       throw new ForbiddenException('You cannot access responses outside your department');
     }
 
@@ -976,7 +1051,6 @@ Return raw JSON array only.
   private formatNurseResponse(
     response: SymptomResponseDocument,
     patient: UserDocument,
-    includeAnswers: boolean,
   ): NurseVisibleResponseItem {
     const form =
       response.symptomFormId &&
@@ -994,31 +1068,26 @@ Return raw JSON array only.
       patientId: patient._id.toString(),
       patientName: this.buildUserDisplayName(patient),
       patientDepartment: patient.assignedDepartment ?? '',
+      patientEmail: patient.email ?? '',
       submittedAt: response.createdAt ?? response.date,
+      createdAt: response.createdAt ?? response.date,
+      updatedAt: response.updatedAt ?? null,
       vitals: {
         bloodPressure: response.vitals?.bloodPressure ?? null,
         heartRate: response.vitals?.heartRate ?? null,
         temperature: response.vitals?.temperature ?? null,
         weight: response.vitals?.weight ?? null,
       },
+      answers: response.answers.map((answer) => ({
+        question: questionMap.get(answer.questionId) ?? answer.questionId,
+        answer: answer.value,
+      })),
       validated: response.validated ?? false,
       validatedBy: response.validatedBy ?? null,
       validatedByName: response.validatedByName ?? null,
       validatedAt: response.validatedAt ?? null,
       validationNote: response.validationNote ?? '',
       issueReported: response.issueReported ?? false,
-      ...(includeAnswers
-        ? {
-            formId:
-              response.symptomFormId instanceof Types.ObjectId
-                ? response.symptomFormId.toString()
-                : (response.symptomFormId as Symptom & { _id?: Types.ObjectId })?._id?.toString(),
-            answers: response.answers.map((answer) => ({
-              question: questionMap.get(answer.questionId) ?? answer.questionId,
-              answer: answer.value,
-            })),
-          }
-        : {}),
     };
   }
 
@@ -1031,6 +1100,14 @@ Return raw JSON array only.
 
   private extractAuthUserId(authUser: { sub?: string; userId?: string } | null | undefined): string {
     return authUser?.sub ?? authUser?.userId ?? '';
+  }
+
+  private normalizeDepartment(department: string | null | undefined): string {
+    return (department ?? '').trim().toLowerCase();
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private extractVitals(
@@ -1102,6 +1179,76 @@ Return raw JSON array only.
     }
 
     return null;
+  }
+
+  private normalizePatientIds(patientIds?: string[], patientId?: string): string[] {
+    const normalizedPatientIds = [
+      ...(Array.isArray(patientIds) ? patientIds : []),
+      ...(typeof patientId === 'string' ? [patientId] : []),
+    ]
+      .map((value) => value?.trim())
+      .filter((value): value is string => !!value);
+
+    const uniquePatientIds = normalizedPatientIds.filter(
+      (value, index, array) => array.indexOf(value) === index,
+    );
+
+    if (uniquePatientIds.length === 0) {
+      throw new BadRequestException('patientIds must contain at least one patient id');
+    }
+
+    return uniquePatientIds;
+  }
+
+  private normalizeStatus(status?: string, isActive?: boolean): string {
+    if (typeof status === 'string' && status.trim()) {
+      return status.trim();
+    }
+
+    if (typeof isActive === 'boolean') {
+      return isActive ? 'active' : 'inactive';
+    }
+
+    return 'active';
+  }
+
+  private resolveNextStatus(dto: UpdateSymptomDto, existing: Symptom): string | null {
+    if (typeof dto.status === 'string' && dto.status.trim()) {
+      return dto.status.trim();
+    }
+
+    if (typeof dto.isActive === 'boolean') {
+      return dto.isActive ? 'active' : 'inactive';
+    }
+
+    if (dto.patientIds !== undefined || dto.patientId !== undefined) {
+      return existing.status ?? (existing.isActive ? 'active' : 'inactive');
+    }
+
+    return null;
+  }
+
+  private getSymptomPatientIds(symptom: Symptom): string[] {
+    return this.normalizeExistingPatientIds(symptom.patientIds, symptom.patientId);
+  }
+
+  private normalizeExistingPatientIds(patientIds?: string[], patientId?: string): string[] {
+    return [
+      ...(Array.isArray(patientIds) ? patientIds : []),
+      ...(typeof patientId === 'string' && patientId.trim() ? [patientId.trim()] : []),
+    ].filter((value, index, array): value is string => !!value && array.indexOf(value) === index);
+  }
+
+  private serializeSymptomForm(symptom: SymptomDocument): Record<string, unknown> {
+    const serialized = symptom.toObject();
+    const patientIds = this.normalizeExistingPatientIds(serialized.patientIds, serialized.patientId);
+    const { patientId, ...rest } = serialized;
+
+    return {
+      ...rest,
+      patientIds,
+      status: serialized.status ?? (serialized.isActive ? 'active' : 'inactive'),
+    };
   }
 
   private normalizeDate(date: Date): Date {

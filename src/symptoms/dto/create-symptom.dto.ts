@@ -1,15 +1,31 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { CreateQuestionDto } from './create-question.dto';
 
 export class CreateSymptomDto {
   @IsString()
-  @IsNotEmpty()
   title: string;
 
   @IsString()
-  @IsNotEmpty()
-  patientId: string;
+  @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
+  medicalService?: string;
+
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  patientIds?: string[];
+
+  @IsString()
+  @IsOptional()
+  patientId?: string;
+
+  @IsString()
+  @IsOptional()
+  status?: string;
 
   @IsBoolean()
   @IsOptional()
