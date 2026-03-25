@@ -59,6 +59,8 @@ http://localhost:3000/api
 npm install @nestjs/swagger swagger-ui-express
 
 
+npm install pdfmake exceljs
+npm install --save-dev @types/pdfmake
 
 
 ---------------------------------------------------------

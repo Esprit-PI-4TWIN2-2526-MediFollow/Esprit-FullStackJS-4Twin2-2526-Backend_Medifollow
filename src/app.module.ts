@@ -15,6 +15,7 @@ import { FaceRecognitionModule } from './face-recognition/face-recognition.modul
 import { QuestionnaireModule } from './questionnaires/questionnaires.module';
 import { AiModule } from './ai/ai.module';
 import { ServiceModule } from './service/service.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 @Module({
   imports: [
 
@@ -43,6 +44,7 @@ import { ServiceModule } from './service/service.module';
     QuestionnaireModule,
     AiModule,
     ServiceModule,
+    DashboardModule
   ],
   controllers: [AppController],
   providers: [AppService],
