@@ -162,4 +162,44 @@ export class QuestionnaireService {
       .sort({ createdAt: -1 })
       .exec();
   }
+
+  /**
+   * Archiver un questionnaire
+   */
+  async archive(id: string): Promise<Questionnaire> {
+    const questionnaire = await this.questionnaireModel.findByIdAndUpdate(
+      id,
+      {
+        status: 'archived',
+        archivedAt: new Date(),
+      },
+      { new: true }   // Retourne le document mis à jour
+    ).exec();
+
+    if (!questionnaire) {
+      throw new NotFoundException(`Questionnaire with ID ${id} not found`);
+    }
+
+    return questionnaire;
+  }
+
+  /**
+   *  Restaurer un questionnaire archivé
+   */
+  async restore(id: string): Promise<Questionnaire> {
+    const questionnaire = await this.questionnaireModel.findByIdAndUpdate(
+      id,
+      {
+        status: 'active',        // ou 'inactive' 
+        archivedAt: null,
+      },
+      { new: true }
+    ).exec();
+
+    if (!questionnaire) {
+      throw new NotFoundException(`Questionnaire with ID ${id} not found`);
+    }
+
+    return questionnaire;
+  }
 }

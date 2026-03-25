@@ -19,10 +19,16 @@ export class Questionnaire {
 
   @Prop({
     required: false,
-    enum: ['active', 'inactive'],
+    enum: ['active', 'inactive','archived'],
     default: 'active'
   })
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'archived';
+
+  @Prop({
+    type: Date,
+    default: null
+  })
+  archivedAt: Date | null;
 
   // Questions embarquées directement dans le document
   @Prop({ type: [QuestionSchema], default: [] })
