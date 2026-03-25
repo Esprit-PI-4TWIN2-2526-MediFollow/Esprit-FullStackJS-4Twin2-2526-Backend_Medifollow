@@ -356,9 +356,7 @@ export class DashboardService {
         ]);
     }
 
-    // ─────────────────────────────────────────────
-    // 7. GLOBAL FOLLOWUP RATE
-
+ 
     async getGlobalFollowupRate() {
         const patients = await this.userModel.countDocuments({ actif: true });
         const responses = await this.questionnaireModel.aggregate([
@@ -374,9 +372,7 @@ export class DashboardService {
         };
     }
 
-    // ─────────────────────────────────────────────
-    // 8. SERVER HEALTH
-    // ─────────────────────────────────────────────
+    
     async getServerHealth() {
         const memoryUsage = process.memoryUsage();
         return {
@@ -392,9 +388,7 @@ export class DashboardService {
         };
     }
 
-    // ─────────────────────────────────────────────
-    // 9. SECURITY STATS
-    // ─────────────────────────────────────────────
+   
     async getSecurityStats() {
         return {
             rateLimit: { maxRequests: 10, window: '60 seconds' },
@@ -403,9 +397,7 @@ export class DashboardService {
         };
     }
 
-    // ─────────────────────────────────────────────
-    // 10. ALERTS
-    // ─────────────────────────────────────────────
+ 
     async getAlerts() {
         type Alert = {
             type: string;
@@ -444,12 +436,7 @@ export class DashboardService {
         return alerts;
     }
 
-    // ─────────────────────────────────────────────
-    // 11. AI INSIGHTS
-    // FIX : appel Groq corrigé — chat.completions.create() au lieu de groqApi.(...)
-    //       modèle Groq valide (llama-3.3-70b-versatile)
-    //       parsing JSON robuste avec strip des backticks markdown
-    // ─────────────────────────────────────────────
+  
     async getAIInsightsDynamic(): Promise<AIInsight[]> {
         try {
             const totalResponsesAgg = await this.questionnaireModel.aggregate([
@@ -498,10 +485,7 @@ Retourne UNIQUEMENT un tableau JSON valide, sans texte ni balises markdown :
         }
     }
 
-    // ─────────────────────────────────────────────
-    // 12. INACTIVE PATIENTS
-    // FIX : ajout du calcul de daysSinceActivity attendu par le frontend
-    // ─────────────────────────────────────────────
+   
     async getInactivePatients() {
         return this.userModel.find({ actif: true, lastLogin: { $lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } })
             .select('firstName lastName email assignedDepartment lastLogin')
