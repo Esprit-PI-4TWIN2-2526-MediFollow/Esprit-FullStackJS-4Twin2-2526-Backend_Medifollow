@@ -16,7 +16,30 @@ export class VoiceCallsController {
   @Post('twilio/voice')
   handleTwilioVoice(@Res() res: Response) {
     const xml = `<Response>
-  <Say>Bonjour, MediFollow fonctionne parfaitement</Say>
+  <Gather numDigits="1" method="POST" action="/voice-calls/twilio/handle-response">
+    <Say>Bonjour. Veuillez entrer votre température. Si elle est entre 35 et 36 appuyez sur 1. Si elle est entre 36 et 37 appuyez sur 2.</Say>
+  </Gather>
+  <Say>Nous n'avons pas reçu de réponse.</Say>
+</Response>`;
+
+    res.set('Content-Type', 'text/xml');
+    return res.send(xml);
+  }
+
+  @Post('twilio/handle-response')
+  handleTwilioResponse(@Body() body: Record<string, unknown>, @Res() res: Response) {
+    const digits = typeof body.Digits === 'string' ? body.Digits : '';
+    console.log('Twilio digits:', digits);
+
+    let message = 'Choix invalide';
+    if (digits === '1') {
+      message = 'Température basse enregistrée';
+    } else if (digits === '2') {
+      message = 'Température normale enregistrée';
+    }
+
+    const xml = `<Response>
+  <Say>${message}</Say>
 </Response>`;
 
     res.set('Content-Type', 'text/xml');
