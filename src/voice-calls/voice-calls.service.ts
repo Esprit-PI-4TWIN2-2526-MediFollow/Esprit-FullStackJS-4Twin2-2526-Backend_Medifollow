@@ -34,7 +34,7 @@ type CreateVoiceCallSessionInput = {
 type SaveVoiceResponseInput = {
   phoneNumber: string;
   question: string;
-  value: string;
+  value: string | number;
   source: string;
   createdAt: Date;
 };
@@ -170,7 +170,35 @@ export class VoiceCallsService {
   }
 
   async saveVoiceResponse(data: SaveVoiceResponseInput) {
-    console.log('saveVoiceResponse:', data);
+    const digits = this.extractString(data.value);
+    const phone = this.extractString(data.phoneNumber);
+
+    let temperature: number | null = null;
+
+    if (digits === '1') {
+      temperature = 35.5;
+    }
+
+    if (digits === '2') {
+      temperature = 36.5;
+    }
+
+    const session = new this.voiceCallSessionModel({
+      phoneNumber: phone,
+      digits,
+      interpretedValue: temperature,
+      startedAt: data.createdAt,
+      lastWebhookAt: data.createdAt,
+      channel: 'voice',
+      provider: 'twilio',
+      status: 'completed',
+    });
+
+    await session.save();
+
+    console.log('Saved voice response:', session);
+
+    return session;
   }
 
   async makeCall(phoneNumber: string) {
@@ -203,6 +231,10 @@ export class VoiceCallsService {
     }
     await session.save();
 
+    if (!session.patientId) {
+      throw new InternalServerErrorException('Voice call session patientId is missing');
+    }
+
     const form = await this.loadAssignedForm(session.patientId);
     const question = this.getCurrentQuestion(session, form);
 
@@ -224,6 +256,10 @@ export class VoiceCallsService {
 
     const session = await this.findByCallSid(callSid);
     session.lastWebhookAt = new Date();
+
+    if (!session.patientId) {
+      throw new InternalServerErrorException('Voice call session patientId is missing');
+    }
 
     const form = await this.loadAssignedForm(session.patientId);
     const question = this.getCurrentQuestion(session, form);
@@ -660,6 +696,20 @@ export class VoiceCallsService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
+  }
+
+  private mapVoiceTemperature(value: string | number): number | null {
+    const digit = `${value}`.trim();
+
+    if (digit === '1') {
+      return 35.5;
+    }
+
+    if (digit === '2') {
+      return 36.5;
+    }
+
+    return null;
   }
 
   private extractString(value: unknown): string {

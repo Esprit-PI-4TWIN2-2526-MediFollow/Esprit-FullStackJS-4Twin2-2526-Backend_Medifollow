@@ -24,17 +24,23 @@ export const VoiceCallAnswerSchema = SchemaFactory.createForClass(VoiceCallAnswe
 
 @Schema({ timestamps: true })
 export class VoiceCallSession {
-  @Prop({ required: true, unique: true, index: true })
-  callSid: string;
+  @Prop({ required: false, unique: true, sparse: true, index: true })
+  callSid?: string;
 
-  @Prop({ required: true })
-  patientId: string;
+  @Prop({ required: false })
+  patientId?: string;
 
-  @Prop({ required: true })
-  formId: string;
+  @Prop({ required: false })
+  formId?: string;
 
   @Prop({ required: true })
   phoneNumber: string;
+
+  @Prop({ type: String, required: false, default: null })
+  digits?: string | null;
+
+  @Prop({ type: Number, required: false, default: null })
+  interpretedValue?: number | null;
 
   @Prop({ type: Number, default: 0 })
   currentQuestionIndex: number;
