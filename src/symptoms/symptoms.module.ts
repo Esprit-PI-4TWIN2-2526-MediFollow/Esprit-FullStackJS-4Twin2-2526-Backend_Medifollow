@@ -16,5 +16,6 @@ import { User, UserSchema } from 'src/users/users.schema';
   ],
   controllers: [SymptomsController],
   providers: [SymptomsService],
+  exports: [SymptomsService],
 })
 export class SymptomsModule {}
