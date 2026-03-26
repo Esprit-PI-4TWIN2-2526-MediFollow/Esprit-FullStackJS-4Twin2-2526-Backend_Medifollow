@@ -1,7 +1,7 @@
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from './users/users.module';
 import { RoleModule } from './role/role.module';
@@ -20,11 +20,9 @@ import { SymptomsModule } from './symptoms/symptoms.module';
 import { VoiceCallsModule } from './voice-calls/voice-calls.module';
 @Module({
   imports: [
-
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-
     }),
     ScheduleModule.forRoot(),
     MongooseModule.forRootAsync({

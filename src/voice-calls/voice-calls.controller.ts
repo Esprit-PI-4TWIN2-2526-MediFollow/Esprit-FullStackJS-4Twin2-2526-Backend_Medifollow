@@ -13,6 +13,15 @@ export class VoiceCallsController {
     return this.voiceCallsService.startCall(dto);
   }
 
+  @Post('call')
+  async triggerCall(@Body() body: any) {
+    const { phoneNumber } = body;
+
+    await this.voiceCallsService.makeCall(phoneNumber);
+
+    return { message: 'Call triggered successfully' };
+  }
+
   @Post('twilio/voice')
   handleTwilioVoice(@Res() res: Response) {
     const xml = `<Response>
@@ -27,14 +36,26 @@ export class VoiceCallsController {
   }
 
   @Post('twilio/handle-response')
-  handleTwilioResponse(@Body() body: Record<string, unknown>, @Res() res: Response) {
+  async handleTwilioResponse(@Body() body: Record<string, unknown>, @Res() res: Response) {
+    const phoneNumber = typeof body.From === 'string' ? body.From : '';
     const digits = typeof body.Digits === 'string' ? body.Digits : '';
+    const temperature =
+      digits === '1' ? 'low' : digits === '2' ? 'normal' : undefined;
+
     console.log('Twilio digits:', digits);
 
+    await this.voiceCallsService.saveVoiceResponse({
+      phoneNumber,
+      question: 'temperature',
+      value: digits,
+      source: 'voice',
+      createdAt: new Date(),
+    });
+
     let message = 'Choix invalide';
-    if (digits === '1') {
+    if (temperature === 'low') {
       message = 'Température basse enregistrée';
-    } else if (digits === '2') {
+    } else if (temperature === 'normal') {
       message = 'Température normale enregistrée';
     }
 

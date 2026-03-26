@@ -4,8 +4,10 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import Twilio from 'twilio';
 import {
   VoiceCallSession,
   VoiceCallSessionDocument,
@@ -27,6 +29,14 @@ type CreateVoiceCallSessionInput = {
   startedAt?: Date;
   completedAt?: Date | null;
   lastWebhookAt?: Date | null;
+};
+
+type SaveVoiceResponseInput = {
+  phoneNumber: string;
+  question: string;
+  value: string;
+  source: string;
+  createdAt: Date;
 };
 
 type SymptomQuestionLike = {
@@ -56,6 +66,7 @@ export class VoiceCallsService {
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     private readonly symptomsService: SymptomsService,
+    private readonly configService: ConfigService,
   ) {}
 
   async createSession(data: CreateVoiceCallSessionInput): Promise<VoiceCallSession> {
@@ -156,6 +167,32 @@ export class VoiceCallsService {
       formId: session.formId,
       status: session.status,
     };
+  }
+
+  async saveVoiceResponse(data: SaveVoiceResponseInput) {
+    console.log('saveVoiceResponse:', data);
+  }
+
+  async makeCall(phoneNumber: string) {
+    const accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
+    const authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
+    const from = this.configService.get<string>('TWILIO_PHONE_NUMBER');
+
+    if (!accountSid || !authToken || !from) {
+      throw new Error('Twilio credentials are not configured');
+    }
+
+    if (!phoneNumber?.trim()) {
+      throw new BadRequestException('phoneNumber is required');
+    }
+
+    const client = Twilio(accountSid, authToken);
+
+    await client.calls.create({
+      to: phoneNumber,
+      from,
+      url: 'https://unretiring-georgiann-unfostering.ngrok-free.dev/voice-calls/twilio/voice',
+    });
   }
 
   async buildVoiceResponse(callSid: string): Promise<string> {
@@ -305,12 +342,12 @@ export class VoiceCallsService {
   }
 
   private async createTwilioCall(to: string, voiceUrl: string, statusUrl: string) {
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const from = process.env.TWILIO_PHONE_NUMBER;
+    const accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
+    const authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
+    const from = this.configService.get<string>('TWILIO_PHONE_NUMBER');
 
     if (!accountSid || !authToken || !from) {
-      throw new InternalServerErrorException('Twilio credentials are not configured');
+      throw new Error('Twilio credentials are not configured');
     }
 
     const response = await fetch(
@@ -341,9 +378,9 @@ export class VoiceCallsService {
 
   private buildAbsoluteUrl(path: string): string {
     const baseUrl =
-      process.env.PUBLIC_BASE_URL ||
-      process.env.API_BASE_URL ||
-      process.env.APP_BASE_URL;
+      this.configService.get<string>('PUBLIC_BASE_URL') ||
+      this.configService.get<string>('API_BASE_URL') ||
+      this.configService.get<string>('APP_BASE_URL');
 
     if (!baseUrl) {
       throw new InternalServerErrorException('Base URL is not configured for Twilio callbacks');
