@@ -2,12 +2,13 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import Twilio from 'twilio';
 import {
   VoiceCallSession,
   VoiceCallSessionDocument,
@@ -31,18 +32,23 @@ type CreateVoiceCallSessionInput = {
   lastWebhookAt?: Date | null;
 };
 
-type SaveVoiceResponseInput = {
-  phoneNumber: string;
-  question: string;
-  value: string | number;
-  source: string;
-  createdAt: Date;
-};
+type SymptomQuestionType =
+  | 'text'
+  | 'number'
+  | 'scale'
+  | 'single_choice'
+  | 'multiple_choice'
+  | 'date'
+  | 'boolean'
+  | 'rating'
+  | 'yes_no';
 
 type SymptomQuestionLike = {
   _id?: { toString(): string } | string;
-  label: string;
-  type: string;
+  id?: { toString(): string } | string;
+  label?: string;
+  text?: string;
+  type: SymptomQuestionType;
   options?: string[];
   validation?: {
     min?: number;
@@ -52,14 +58,19 @@ type SymptomQuestionLike = {
 
 type SymptomFormLike = {
   _id?: { toString(): string } | string;
+  id?: { toString(): string } | string;
   title?: string;
   questions?: SymptomQuestionLike[];
 };
+
+type InterpretedAnswer = string | number | boolean | string[] | null;
 
 const INVALID_MARKER = '__invalid__';
 
 @Injectable()
 export class VoiceCallsService {
+  private readonly logger = new Logger(VoiceCallsService.name);
+
   constructor(
     @InjectModel(VoiceCallSession.name)
     private readonly voiceCallSessionModel: Model<VoiceCallSessionDocument>,
@@ -69,73 +80,6 @@ export class VoiceCallsService {
     private readonly configService: ConfigService,
   ) {}
 
-  async createSession(data: CreateVoiceCallSessionInput): Promise<VoiceCallSession> {
-    return this.voiceCallSessionModel.create({
-      ...data,
-      currentQuestionIndex: data.currentQuestionIndex ?? 0,
-      status: data.status ?? 'initiated',
-      channel: data.channel ?? 'voice-call',
-      provider: data.provider ?? 'twilio',
-      startedAt: data.startedAt ?? new Date(),
-    });
-  }
-
-  async findByCallSid(callSid: string): Promise<VoiceCallSessionDocument> {
-    const session = await this.voiceCallSessionModel.findOne({ callSid }).exec();
-
-    if (!session) {
-      throw new NotFoundException(`Voice call session ${callSid} not found`);
-    }
-
-    return session;
-  }
-
-  async saveAnswer(
-    callSid: string,
-    questionId: string,
-    digits: string,
-    mappedValue: string | null,
-  ): Promise<VoiceCallSession> {
-    const session = await this.findByCallSid(callSid);
-
-    session.answers.push({
-      questionId,
-      rawDigits: digits,
-      mappedValue,
-      answeredAt: new Date(),
-    });
-    session.currentQuestionIndex += 1;
-    session.status = 'in_progress';
-    session.lastWebhookAt = new Date();
-
-    await session.save();
-
-    return session;
-  }
-
-  async completeSession(callSid: string): Promise<VoiceCallSession> {
-    const session = await this.findByCallSid(callSid);
-
-    session.status = 'completed';
-    session.completedAt = new Date();
-    session.lastWebhookAt = new Date();
-
-    await session.save();
-
-    return session;
-  }
-
-  async failSession(callSid: string): Promise<VoiceCallSession> {
-    const session = await this.findByCallSid(callSid);
-
-    session.status = 'failed';
-    session.lastWebhookAt = new Date();
-
-    await session.save();
-
-    return session;
-  }
-
   async startCall(dto: StartVoiceCallDto) {
     const patient = await this.resolvePatient(dto);
     const phoneNumber = dto.phoneNumber?.trim() || patient.phoneNumber?.trim();
@@ -144,109 +88,52 @@ export class VoiceCallsService {
       throw new BadRequestException('Patient phone number is required');
     }
 
-    const form = await this.loadAssignedForm(patient._id.toString());
-    const formId = this.getFormId(form);
-    const voiceUrl = this.buildAbsoluteUrl('/voice-calls/twilio/voice');
-    const statusUrl = this.buildAbsoluteUrl('/voice-calls/twilio/status');
-
-    const twilioCall = await this.createTwilioCall(phoneNumber, voiceUrl, statusUrl);
-
-    const session = await this.createSession({
-      callSid: twilioCall.sid,
-      patientId: patient._id.toString(),
-      formId,
-      phoneNumber,
-      status: 'initiated',
-      lastWebhookAt: null,
-    });
-
-    return {
-      message: 'Voice call started',
-      callSid: twilioCall.sid,
-      patientId: session.patientId,
-      formId: session.formId,
-      status: session.status,
-    };
-  }
-
-  async saveVoiceResponse(data: SaveVoiceResponseInput) {
-    const digits = this.extractString(data.value);
-    const phone = this.extractString(data.phoneNumber);
-
-    let temperature: number | null = null;
-
-    if (digits === '1') {
-      temperature = 35.5;
-    }
-
-    if (digits === '2') {
-      temperature = 36.5;
-    }
-
-    const session = new this.voiceCallSessionModel({
-      phoneNumber: phone,
-      digits,
-      interpretedValue: temperature,
-      startedAt: data.createdAt,
-      lastWebhookAt: data.createdAt,
-      channel: 'voice',
-      provider: 'twilio',
-      status: 'completed',
-    });
-
-    await session.save();
-
-    console.log('Saved voice response:', session);
-
-    return session;
+    return this.placeOutboundCall(patient, phoneNumber);
   }
 
   async makeCall(phoneNumber: string) {
-    const accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
-    const authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
-    const from = this.configService.get<string>('TWILIO_PHONE_NUMBER');
+    const normalizedPhoneNumber = phoneNumber?.trim();
 
-    if (!accountSid || !authToken || !from) {
-      throw new Error('Twilio credentials are not configured');
-    }
-
-    if (!phoneNumber?.trim()) {
+    if (!normalizedPhoneNumber) {
       throw new BadRequestException('phoneNumber is required');
     }
 
-    const client = Twilio(accountSid, authToken);
+    const patient = await this.userModel.findOne({ phoneNumber: normalizedPhoneNumber }).exec();
 
-    await client.calls.create({
-      to: phoneNumber,
-      from,
-      url: 'https://unretiring-georgiann-unfostering.ngrok-free.dev/voice-calls/twilio/voice',
-    });
+    if (!patient) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    return this.placeOutboundCall(patient, normalizedPhoneNumber);
   }
 
-  async buildVoiceResponse(callSid: string): Promise<string> {
-    const session = await this.findByCallSid(callSid);
+  async handleIncomingVoice(dto: TwilioVoiceWebhookDto & Record<string, unknown>): Promise<string> {
+    const callSid = this.extractString(dto.CallSid);
+    const phoneNumber = this.extractString(dto.From);
+
+    if (!callSid) {
+      throw new BadRequestException('CallSid is required');
+    }
+
+    const session = await this.getOrCreateSession(callSid, phoneNumber);
+    const form = await this.loadAssignedFormForSession(session);
+
     session.lastWebhookAt = new Date();
     if (session.status === 'initiated') {
       session.status = 'in_progress';
     }
     await session.save();
 
-    if (!session.patientId) {
-      throw new InternalServerErrorException('Voice call session patientId is missing');
-    }
-
-    const form = await this.loadAssignedForm(session.patientId);
     const question = this.getCurrentQuestion(session, form);
-
     if (!question) {
       await this.completeAndPersistSession(session, form);
       return this.buildCompletionTwiml();
     }
 
-    return this.buildQuestionTwiml(question, session.currentQuestionIndex === 0);
+    return this.renderQuestionTwiml(question, true);
   }
 
-  async handleGather(dto: TwilioVoiceWebhookDto & Record<string, unknown>): Promise<string> {
+  async handleVoiceResponse(dto: TwilioVoiceWebhookDto & Record<string, unknown>): Promise<string> {
     const callSid = this.extractString(dto.CallSid);
     const digits = this.extractString(dto.Digits);
 
@@ -255,13 +142,7 @@ export class VoiceCallsService {
     }
 
     const session = await this.findByCallSid(callSid);
-    session.lastWebhookAt = new Date();
-
-    if (!session.patientId) {
-      throw new InternalServerErrorException('Voice call session patientId is missing');
-    }
-
-    const form = await this.loadAssignedForm(session.patientId);
+    const form = await this.loadAssignedFormForSession(session);
     const question = this.getCurrentQuestion(session, form);
 
     if (!question) {
@@ -269,34 +150,38 @@ export class VoiceCallsService {
       return this.buildCompletionTwiml();
     }
 
+    session.lastWebhookAt = new Date();
+
     if (!digits) {
-      return this.handleInvalidInput(session, question, 'No digits received');
+      await session.save();
+      return this.buildRepeatQuestionTwiml(question, 'Nous n avons pas recu de reponse.');
     }
 
-    const duplicateHandled = this.handleDuplicateGather(session, form, digits);
-    if (duplicateHandled) {
-      return duplicateHandled;
+    const interpretedValue = this.interpretDigits(question, digits);
+    if (interpretedValue === INVALID_MARKER) {
+      await session.save();
+      return this.buildRepeatQuestionTwiml(question, 'Reponse invalide. Veuillez recommencer.');
     }
 
-    const mappedValue = this.mapDigitsToAnswer(question, digits);
-    if (mappedValue === INVALID_MARKER) {
-      return this.handleInvalidInput(session, question, digits);
-    }
+    session.answers.push({
+      questionId: this.getQuestionId(question),
+      rawDigits: digits,
+      value: digits,
+      mappedValue: this.stringifyMappedValue(interpretedValue),
+      interpretedValue,
+      answeredAt: new Date(),
+    });
+    session.currentQuestionIndex += 1;
+    session.status = 'in_progress';
+    await session.save();
 
-    await this.saveAnswer(
-      callSid,
-      this.getQuestionId(question),
-      digits,
-      this.stringifyMappedValue(mappedValue),
-    );
-
-    const nextQuestion = this.getCurrentQuestion(await this.findByCallSid(callSid), form);
+    const nextQuestion = this.getCurrentQuestion(session, form);
     if (!nextQuestion) {
-      await this.completeAndPersistSession(await this.findByCallSid(callSid), form);
+      await this.completeAndPersistSession(session, form);
       return this.buildCompletionTwiml();
     }
 
-    return this.buildQuestionTwiml(nextQuestion, false);
+    return this.renderQuestionTwiml(nextQuestion, false);
   }
 
   async handleStatus(dto: TwilioVoiceWebhookDto & Record<string, unknown>) {
@@ -308,10 +193,10 @@ export class VoiceCallsService {
     const session = await this.findByCallSid(callSid);
     session.lastWebhookAt = new Date();
 
-    const rawStatus = this.extractString((dto as Record<string, unknown>)['CallStatus']);
+    const rawStatus = this.extractString((dto as Record<string, unknown>).CallStatus);
     const normalizedStatus = rawStatus.toLowerCase();
 
-    if (['completed'].includes(normalizedStatus)) {
+    if (normalizedStatus === 'completed') {
       session.status = 'completed';
       session.completedAt = session.completedAt ?? new Date();
     } else if (['failed', 'busy', 'no-answer', 'canceled'].includes(normalizedStatus)) {
@@ -325,6 +210,146 @@ export class VoiceCallsService {
       callSid: session.callSid,
       status: session.status,
     };
+  }
+
+  @Cron('0 8 * * *', { timeZone: 'Africa/Lagos' })
+  async triggerMorningReminderCalls() {
+    const patients = await this.userModel
+      .find({
+        phoneNumber: { $exists: true, $ne: '' },
+      })
+      .exec();
+
+    for (const patient of patients) {
+      try {
+        const form = await this.loadAssignedForm(patient._id.toString());
+        if (!form || !Array.isArray(form.questions) || form.questions.length === 0) {
+          continue;
+        }
+
+        const todayResponse = await this.symptomsService.getTodayResponse(patient._id.toString());
+        if (todayResponse) {
+          continue;
+        }
+
+        const phoneNumber = patient.phoneNumber?.trim();
+        if (!phoneNumber) {
+          continue;
+        }
+
+        await this.placeOutboundCall(patient, phoneNumber);
+      } catch (error) {
+        this.logger.error(
+          `Failed to trigger reminder call for patient ${patient._id.toString()}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
+  }
+
+  async createSession(data: CreateVoiceCallSessionInput): Promise<VoiceCallSession> {
+    return this.voiceCallSessionModel.create({
+      ...data,
+      currentQuestionIndex: data.currentQuestionIndex ?? 0,
+      status: data.status ?? 'initiated',
+      channel: data.channel ?? 'voice-call',
+      provider: data.provider ?? 'twilio',
+      startedAt: data.startedAt ?? new Date(),
+      answers: [],
+    });
+  }
+
+  async findByCallSid(callSid: string): Promise<VoiceCallSessionDocument> {
+    const session = await this.voiceCallSessionModel.findOne({ callSid }).exec();
+
+    if (!session) {
+      throw new NotFoundException(`Voice call session ${callSid} not found`);
+    }
+
+    return session;
+  }
+
+  generateTwiML(question: SymptomQuestionLike, actionUrl: string, retryMessage?: string): string {
+    const prompt = this.buildQuestionPrompt(question);
+    const gatherAttributes = this.buildGatherAttributes(question);
+    const voiceUrl = this.buildAbsoluteUrl('/voice-calls/twilio/voice');
+    const lines = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<Response>',
+      retryMessage ? `<Say>${this.escapeXml(retryMessage)}</Say>` : '',
+      `<Gather input="dtmf" action="${this.escapeXml(actionUrl)}" method="POST"${gatherAttributes}>`,
+      `<Say>${this.escapeXml(prompt)}</Say>`,
+      '</Gather>',
+      `<Say>${this.escapeXml("Nous n'avons pas recu de reponse.")}</Say>`,
+      `<Redirect method="POST">${this.escapeXml(voiceUrl)}</Redirect>`,
+      '</Response>',
+    ];
+
+    return lines.filter(Boolean).join('');
+  }
+
+  private async placeOutboundCall(patient: UserDocument, phoneNumber: string) {
+    const form = await this.loadAssignedForm(patient._id.toString());
+    const formId = this.getFormId(form);
+    const voiceUrl = this.buildAbsoluteUrl('/voice-calls/twilio/voice');
+    const statusUrl = this.buildAbsoluteUrl('/voice-calls/twilio/status');
+    const twilioCall = await this.createTwilioCall(phoneNumber, voiceUrl, statusUrl);
+
+    const existingSession = await this.voiceCallSessionModel.findOne({ callSid: twilioCall.sid }).exec();
+    if (!existingSession) {
+      await this.createSession({
+        callSid: twilioCall.sid,
+        patientId: patient._id.toString(),
+        formId,
+        phoneNumber,
+        currentQuestionIndex: 0,
+        status: 'initiated',
+        startedAt: new Date(),
+        lastWebhookAt: null,
+      });
+    }
+
+    return {
+      message: 'Voice call started',
+      callSid: twilioCall.sid,
+      patientId: patient._id.toString(),
+      formId,
+      status: 'initiated',
+    };
+  }
+
+  private async getOrCreateSession(callSid: string, phoneNumber: string): Promise<VoiceCallSessionDocument> {
+    const existingSession = await this.voiceCallSessionModel.findOne({ callSid }).exec();
+    if (existingSession) {
+      return existingSession;
+    }
+
+    const normalizedPhoneNumber = phoneNumber?.trim();
+    if (!normalizedPhoneNumber) {
+      throw new BadRequestException('From phone number is required');
+    }
+
+    const patient = await this.userModel.findOne({ phoneNumber: normalizedPhoneNumber }).exec();
+    if (!patient) {
+      throw new NotFoundException('Patient not found for incoming call');
+    }
+
+    const form = await this.loadAssignedForm(patient._id.toString());
+    const formId = this.getFormId(form);
+
+    return this.voiceCallSessionModel.create({
+      callSid,
+      patientId: patient._id.toString(),
+      formId,
+      phoneNumber: normalizedPhoneNumber,
+      currentQuestionIndex: 0,
+      answers: [],
+      status: 'in_progress',
+      startedAt: new Date(),
+      lastWebhookAt: new Date(),
+      channel: 'voice-call',
+      provider: 'twilio',
+    });
   }
 
   private async resolvePatient(dto: StartVoiceCallDto): Promise<UserDocument> {
@@ -351,8 +376,16 @@ export class VoiceCallsService {
     return form as SymptomFormLike;
   }
 
+  private async loadAssignedFormForSession(session: VoiceCallSessionDocument): Promise<SymptomFormLike> {
+    if (!session.patientId) {
+      throw new InternalServerErrorException('Voice call session patientId is missing');
+    }
+
+    return this.loadAssignedForm(session.patientId);
+  }
+
   private getFormId(form: SymptomFormLike): string {
-    const formId = form?._id?.toString?.() ?? `${form?._id ?? ''}`;
+    const formId = form?._id?.toString?.() ?? form?.id?.toString?.() ?? `${form?._id ?? form?.id ?? ''}`;
     if (!formId) {
       throw new InternalServerErrorException('Assigned symptom form id is missing');
     }
@@ -369,12 +402,149 @@ export class VoiceCallsService {
   }
 
   private getQuestionId(question: SymptomQuestionLike): string {
-    const questionId = question?._id?.toString?.() ?? `${question?._id ?? ''}`;
+    const questionId =
+      question?._id?.toString?.() ?? question?.id?.toString?.() ?? `${question?._id ?? question?.id ?? ''}`;
+
     if (!questionId) {
       throw new InternalServerErrorException('Question id is missing');
     }
 
     return questionId;
+  }
+
+  private getQuestionLabel(question: SymptomQuestionLike): string {
+    return question.label?.trim() || question.text?.trim() || 'Question suivante.';
+  }
+
+  private normalizeQuestionType(type: SymptomQuestionType): SymptomQuestionType {
+    if (type === 'rating') {
+      return 'scale';
+    }
+
+    if (type === 'yes_no') {
+      return 'boolean';
+    }
+
+    return type;
+  }
+
+  private renderQuestionTwiml(question: SymptomQuestionLike, includeGreeting: boolean): string {
+    const actionUrl = this.buildAbsoluteUrl('/voice-calls/twilio/handle-response');
+    let intro = '';
+
+    if (includeGreeting) {
+      intro = 'Bonjour. MediFollow vous appelle pour votre suivi de symptomes.';
+    }
+
+    return this.generateTwiML(question, actionUrl, intro);
+  }
+
+  private buildCompletionTwiml(): string {
+    return [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<Response>',
+      `<Say>${this.escapeXml('Merci, vos reponses ont ete enregistrees.')}</Say>`,
+      '<Hangup/>',
+      '</Response>',
+    ].join('');
+  }
+
+  private buildRepeatQuestionTwiml(question: SymptomQuestionLike, message: string): string {
+    const actionUrl = this.buildAbsoluteUrl('/voice-calls/twilio/handle-response');
+    return this.generateTwiML(question, actionUrl, message);
+  }
+
+  private buildQuestionPrompt(question: SymptomQuestionLike): string {
+    const label = this.getQuestionLabel(question);
+    const type = this.normalizeQuestionType(question.type);
+    const options = Array.isArray(question.options) ? question.options : [];
+
+    switch (type) {
+      case 'scale':
+        return `${label}. Donnez une note entre 1 et 9.`;
+      case 'boolean':
+        return `${label}. Appuyez sur 1 pour oui, 2 pour non.`;
+      case 'number':
+        return `${label}. Entrez votre valeur puis diese.`;
+      case 'single_choice':
+        return `${label}. ${this.buildChoicePrompt(options)}`;
+      case 'multiple_choice':
+        return `${label}. ${this.buildChoicePrompt(options)} Entrez vos choix puis diese.`;
+      case 'date':
+        return `${label}. Entrez la date en chiffres puis diese.`;
+      case 'text':
+      default:
+        return `${label}. Entrez votre reponse puis diese.`;
+    }
+  }
+
+  private buildChoicePrompt(options: string[]): string {
+    return options
+      .map((option, index) => `Appuyez sur ${index + 1} pour ${option}.`)
+      .join(' ');
+  }
+
+  private buildGatherAttributes(question: SymptomQuestionLike): string {
+    const type = this.normalizeQuestionType(question.type);
+
+    if (type === 'scale' || type === 'boolean' || type === 'single_choice') {
+      return ' numDigits="1"';
+    }
+
+    return ' finishOnKey="#" timeout="8"';
+  }
+
+  private interpretDigits(question: SymptomQuestionLike, digits: string): InterpretedAnswer | typeof INVALID_MARKER {
+    const cleanedDigits = digits.trim();
+    const type = this.normalizeQuestionType(question.type);
+    const options = Array.isArray(question.options) ? question.options : [];
+
+    switch (type) {
+      case 'scale': {
+        const value = Number.parseInt(cleanedDigits, 10);
+        return value >= 1 && value <= 9 ? value : INVALID_MARKER;
+      }
+      case 'boolean':
+        if (cleanedDigits === '1') {
+          return true;
+        }
+        if (cleanedDigits === '2') {
+          return false;
+        }
+        return INVALID_MARKER;
+      case 'number': {
+        const value = Number.parseFloat(cleanedDigits);
+        return Number.isFinite(value) ? value : INVALID_MARKER;
+      }
+      case 'single_choice': {
+        const optionIndex = Number.parseInt(cleanedDigits, 10) - 1;
+        return options[optionIndex] ?? INVALID_MARKER;
+      }
+      case 'multiple_choice': {
+        const values = [...cleanedDigits]
+          .map((digit) => Number.parseInt(digit, 10) - 1)
+          .map((index) => options[index])
+          .filter((option): option is string => Boolean(option));
+
+        return values.length > 0 ? values : INVALID_MARKER;
+      }
+      case 'date':
+      case 'text':
+      default:
+        return cleanedDigits || INVALID_MARKER;
+    }
+  }
+
+  private stringifyMappedValue(value: InterpretedAnswer | typeof INVALID_MARKER): string | null {
+    if (value === null || value === INVALID_MARKER) {
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
   }
 
   private async createTwilioCall(to: string, voiceUrl: string, statusUrl: string) {
@@ -383,7 +553,7 @@ export class VoiceCallsService {
     const from = this.configService.get<string>('TWILIO_PHONE_NUMBER');
 
     if (!accountSid || !authToken || !from) {
-      throw new Error('Twilio credentials are not configured');
+      throw new InternalServerErrorException('Twilio credentials are not configured');
     }
 
     const response = await fetch(
@@ -425,226 +595,6 @@ export class VoiceCallsService {
     return `${baseUrl.replace(/\/+$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
   }
 
-  private buildQuestionTwiml(question: SymptomQuestionLike, includeGreeting: boolean): string {
-    const prompt = this.buildQuestionPrompt(question);
-    const gatherAttributes = this.buildGatherAttributes(question);
-    const gatherAction = this.buildAbsoluteUrl('/voice-calls/twilio/gather');
-
-    return [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<Response>',
-      includeGreeting ? `<Say>${this.escapeXml('Bonjour. This is your MediFollow symptom follow-up call.')}</Say>` : '',
-      `<Gather input="dtmf" action="${this.escapeXml(gatherAction)}" method="POST"${gatherAttributes}>`,
-      `<Say>${this.escapeXml(prompt)}</Say>`,
-      '</Gather>',
-      `<Say>${this.escapeXml('We did not receive your response. Please try again.')}</Say>`,
-      `<Redirect method="POST">${this.escapeXml(this.buildAbsoluteUrl('/voice-calls/twilio/voice'))}</Redirect>`,
-      '</Response>',
-    ]
-      .filter(Boolean)
-      .join('');
-  }
-
-  private buildCompletionTwiml(): string {
-    return [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<Response>',
-      `<Say>${this.escapeXml('Thank you. Your symptom responses have been recorded. Goodbye.')}</Say>`,
-      '<Hangup/>',
-      '</Response>',
-    ].join('');
-  }
-
-  private buildRetryTwiml(message: string, question: SymptomQuestionLike): string {
-    const prompt = `${message} ${this.buildQuestionPrompt(question)}`.trim();
-    const gatherAttributes = this.buildGatherAttributes(question);
-    const gatherAction = this.buildAbsoluteUrl('/voice-calls/twilio/gather');
-
-    return [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<Response>',
-      `<Gather input="dtmf" action="${this.escapeXml(gatherAction)}" method="POST"${gatherAttributes}>`,
-      `<Say>${this.escapeXml(prompt)}</Say>`,
-      '</Gather>',
-      `<Say>${this.escapeXml('We could not capture a valid answer. Goodbye.')}</Say>`,
-      '<Hangup/>',
-      '</Response>',
-    ].join('');
-  }
-
-  private buildGatherAttributes(question: SymptomQuestionLike): string {
-    const type = question.type;
-
-    if (type === 'boolean') {
-      return ' numDigits="1"';
-    }
-
-    if (type === 'single_choice') {
-      const digits = String(Math.max(1, String((question.options ?? []).length).length));
-      return ` numDigits="${digits}"`;
-    }
-
-    return ' finishOnKey="#" timeout="8"';
-  }
-
-  private buildQuestionPrompt(question: SymptomQuestionLike): string {
-    const label = question.label?.trim() || 'Please answer the next question.';
-
-    switch (question.type) {
-      case 'boolean':
-        return `${label} Press 1 for yes. Press 2 for no.`;
-      case 'single_choice':
-        return `${label} ${this.buildChoicePrompt(question.options ?? [])}`;
-      case 'multiple_choice':
-        return `${label} Enter the numbers of all matching options followed by the pound key. ${this.buildChoicePrompt(question.options ?? [])}`;
-      case 'scale': {
-        const min = question.validation?.min ?? 1;
-        const max = question.validation?.max ?? 10;
-        return `${label} Enter a number between ${min} and ${max}, then press the pound key.`;
-      }
-      case 'number':
-        return `${label} Enter your answer using the keypad, then press the pound key.`;
-      case 'date':
-        return `${label} Enter the date using digits, then press the pound key.`;
-      case 'text':
-      default:
-        return `${label} Enter your answer using the keypad, then press the pound key.`;
-    }
-  }
-
-  private buildChoicePrompt(options: string[]): string {
-    return options
-      .map((option, index) => `Press ${index + 1} for ${option}.`)
-      .join(' ');
-  }
-
-  private mapDigitsToAnswer(
-    question: SymptomQuestionLike,
-    digits: string,
-  ): string | number | boolean | string[] {
-    const cleanedDigits = digits.trim();
-
-    switch (question.type) {
-      case 'boolean':
-        if (cleanedDigits === '1') return true;
-        if (cleanedDigits === '2') return false;
-        return INVALID_MARKER;
-      case 'single_choice': {
-        const optionIndex = Number.parseInt(cleanedDigits, 10) - 1;
-        const option = (question.options ?? [])[optionIndex];
-        return option ?? INVALID_MARKER;
-      }
-      case 'multiple_choice': {
-        const selections = [...cleanedDigits]
-          .map((digit) => Number.parseInt(digit, 10) - 1)
-          .map((index) => (question.options ?? [])[index])
-          .filter((option): option is string => !!option);
-
-        return selections.length > 0 ? selections : INVALID_MARKER;
-      }
-      case 'scale': {
-        const value = Number.parseInt(cleanedDigits, 10);
-        if (!Number.isFinite(value)) return INVALID_MARKER;
-        const min = question.validation?.min ?? 1;
-        const max = question.validation?.max ?? 10;
-        return value >= min && value <= max ? value : INVALID_MARKER;
-      }
-      case 'number': {
-        const value = Number.parseInt(cleanedDigits, 10);
-        return Number.isFinite(value) ? value : INVALID_MARKER;
-      }
-      case 'date':
-      case 'text':
-      default:
-        return cleanedDigits || INVALID_MARKER;
-    }
-  }
-
-  private stringifyMappedValue(value: string | number | boolean | string[]): string {
-    return Array.isArray(value) ? JSON.stringify(value) : String(value);
-  }
-
-  private parseMappedValue(value: string, question: SymptomQuestionLike): string | number | boolean | string[] {
-    if (question.type === 'boolean') {
-      return value === 'true';
-    }
-
-    if (question.type === 'number' || question.type === 'scale') {
-      const parsed = Number.parseFloat(value);
-      return Number.isFinite(parsed) ? parsed : value;
-    }
-
-    if (question.type === 'multiple_choice') {
-      try {
-        const parsed = JSON.parse(value);
-        return Array.isArray(parsed) ? parsed : [value];
-      } catch {
-        return [value];
-      }
-    }
-
-    return value;
-  }
-
-  private async handleInvalidInput(
-    session: VoiceCallSessionDocument,
-    question: SymptomQuestionLike,
-    rawDigits: string,
-  ): Promise<string> {
-    const questionId = this.getQuestionId(question);
-    const invalidAttempts = session.answers.filter(
-      (answer) => answer.questionId === questionId && answer.mappedValue === INVALID_MARKER,
-    ).length;
-
-    session.answers.push({
-      questionId,
-      rawDigits,
-      mappedValue: INVALID_MARKER,
-      answeredAt: new Date(),
-    });
-    session.lastWebhookAt = new Date();
-
-    if (invalidAttempts >= 1) {
-      session.status = 'failed';
-      await session.save();
-      return this.buildRetryTwiml('Invalid input received again.', question);
-    }
-
-    await session.save();
-    return this.buildRetryTwiml('Invalid input. Please try once more.', question);
-  }
-
-  private findLatestValidAnswer(session: VoiceCallSessionDocument, questionId: string) {
-    return [...session.answers]
-      .reverse()
-      .find((answer) => answer.questionId === questionId && answer.mappedValue !== INVALID_MARKER);
-  }
-
-  private handleDuplicateGather(
-    session: VoiceCallSessionDocument,
-    form: SymptomFormLike,
-    digits: string,
-  ): string | null {
-    const lastValidAnswer = [...session.answers]
-      .reverse()
-      .find((answer) => answer.mappedValue !== INVALID_MARKER);
-
-    if (!lastValidAnswer || lastValidAnswer.rawDigits !== digits) {
-      return null;
-    }
-
-    const currentQuestion = this.getCurrentQuestion(session, form);
-    if (!currentQuestion) {
-      return this.buildCompletionTwiml();
-    }
-
-    if (lastValidAnswer.questionId === this.getQuestionId(currentQuestion)) {
-      return null;
-    }
-
-    return this.buildQuestionTwiml(currentQuestion, false);
-  }
-
   private async completeAndPersistSession(
     session: VoiceCallSessionDocument,
     form: SymptomFormLike,
@@ -653,32 +603,24 @@ export class VoiceCallsService {
       return;
     }
 
-    const questions = Array.isArray(form.questions) ? form.questions : [];
-    const validAnswers = questions
-      .map((question) => {
-        const questionId = this.getQuestionId(question);
-        const savedAnswer = this.findLatestValidAnswer(session, questionId);
+    const answers = session.answers
+      .filter((answer) => answer.questionId && answer.interpretedValue !== undefined)
+      .map((answer) => ({
+        questionId: answer.questionId,
+        value: answer.interpretedValue ?? null,
+      }));
 
-        if (!savedAnswer) {
-          return null;
-        }
-
-        return {
-          questionId,
-          value: this.parseMappedValue(savedAnswer.mappedValue ?? '', question),
-        };
-      })
-      .filter((answer): answer is { questionId: string; value: string | number | boolean | string[] } => !!answer);
-
-    if (validAnswers.length > 0) {
+    if (answers.length > 0 && session.formId && session.patientId) {
       await this.symptomsService.saveResponse({
         formId: session.formId,
         patientId: session.patientId,
-        answers: validAnswers,
+        date: new Date(),
+        answers,
         channel: 'voice-call',
         source: 'twilio',
         metadata: {
           callSid: session.callSid,
+          symptomTitle: form.title ?? null,
         },
       } as any);
     }
@@ -689,6 +631,10 @@ export class VoiceCallsService {
     await session.save();
   }
 
+  private extractString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
   private escapeXml(value: string): string {
     return value
       .replace(/&/g, '&amp;')
@@ -696,23 +642,5 @@ export class VoiceCallsService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
-  }
-
-  private mapVoiceTemperature(value: string | number): number | null {
-    const digit = `${value}`.trim();
-
-    if (digit === '1') {
-      return 35.5;
-    }
-
-    if (digit === '2') {
-      return 36.5;
-    }
-
-    return null;
-  }
-
-  private extractString(value: unknown): string {
-    return typeof value === 'string' ? value.trim() : '';
   }
 }

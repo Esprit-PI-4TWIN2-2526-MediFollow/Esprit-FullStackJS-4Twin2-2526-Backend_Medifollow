@@ -10,11 +10,17 @@ export class VoiceCallAnswer {
   @Prop({ required: true })
   questionId: string;
 
-  @Prop({ required: true })
+  @Prop({ type: String, required: true })
   rawDigits: string;
 
   @Prop({ type: String, required: false, default: null })
+  value?: string | null;
+
+  @Prop({ type: String, required: false, default: null })
   mappedValue?: string | null;
+
+  @Prop({ type: Object, required: false, default: null })
+  interpretedValue?: string | number | boolean | string[] | null;
 
   @Prop({ type: Date, required: true, default: Date.now })
   answeredAt: Date;

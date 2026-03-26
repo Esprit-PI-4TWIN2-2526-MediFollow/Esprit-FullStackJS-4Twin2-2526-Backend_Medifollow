@@ -14,8 +14,8 @@ export class VoiceCallsController {
   }
 
   @Post('call')
-  async triggerCall(@Body() body: any) {
-    const { phoneNumber } = body;
+  async triggerCall(@Body() body: { phoneNumber?: string }) {
+    const phoneNumber = typeof body?.phoneNumber === 'string' ? body.phoneNumber : '';
 
     await this.voiceCallsService.makeCall(phoneNumber);
 
@@ -23,58 +23,33 @@ export class VoiceCallsController {
   }
 
   @Post('twilio/voice')
-  handleTwilioVoice(@Res() res: Response) {
-    const xml = `<Response>
-  <Gather numDigits="1" method="POST" action="/voice-calls/twilio/handle-response">
-    <Say>Bonjour. Veuillez entrer votre température. Si elle est entre 35 et 36 appuyez sur 1. Si elle est entre 36 et 37 appuyez sur 2.</Say>
-  </Gather>
-  <Say>Nous n'avons pas reçu de réponse.</Say>
-</Response>`;
-
+  async handleTwilioVoice(
+    @Body() body: TwilioVoiceWebhookDto & Record<string, unknown>,
+    @Res() res: Response,
+  ) {
+    const xml = await this.voiceCallsService.handleIncomingVoice(body);
     res.set('Content-Type', 'text/xml');
     return res.send(xml);
   }
 
   @Post('twilio/handle-response')
-  async handleTwilioResponse(@Body() body: Record<string, unknown>, @Res() res: Response) {
-    const phoneNumber = typeof body.From === 'string' ? body.From : '';
-    const digits = typeof body.Digits === 'string' ? body.Digits : '';
-    const temperature =
-      digits === '1' ? 'low' : digits === '2' ? 'normal' : undefined;
-
-    console.log('Twilio digits:', digits);
-
-    await this.voiceCallsService.saveVoiceResponse({
-      phoneNumber,
-      question: 'temperature',
-      value: digits,
-      source: 'voice',
-      createdAt: new Date(),
-    });
-
-    let message = 'Choix invalide';
-    if (temperature === 'low') {
-      message = 'Température basse enregistrée';
-    } else if (temperature === 'normal') {
-      message = 'Température normale enregistrée';
-    }
-
-    const xml = `<Response>
-  <Say>${message}</Say>
-</Response>`;
-
+  async handleTwilioResponse(
+    @Body() body: TwilioVoiceWebhookDto & Record<string, unknown>,
+    @Res() res: Response,
+  ) {
+    const xml = await this.voiceCallsService.handleVoiceResponse(body);
     res.set('Content-Type', 'text/xml');
     return res.send(xml);
   }
 
   @Post('twilio/gather')
   async handleTwilioGather(
-    @Body() dto: TwilioVoiceWebhookDto & Record<string, unknown>,
+    @Body() body: TwilioVoiceWebhookDto & Record<string, unknown>,
     @Res() res: Response,
   ) {
-    const twiml = await this.voiceCallsService.handleGather(dto);
-    res.type('text/xml');
-    return res.send(twiml);
+    const xml = await this.voiceCallsService.handleVoiceResponse(body);
+    res.set('Content-Type', 'text/xml');
+    return res.send(xml);
   }
 
   @Post('twilio/status')
