@@ -14,10 +14,13 @@ export class VoiceCallsController {
   }
 
   @Post('twilio/voice')
-  async handleTwilioVoice(@Body() dto: TwilioVoiceWebhookDto, @Res() res: Response) {
-    const twiml = await this.voiceCallsService.buildVoiceResponse(dto.CallSid);
-    res.type('text/xml');
-    return res.send(twiml);
+  handleTwilioVoice(@Res() res: Response) {
+    const xml = `<Response>
+  <Say>Bonjour, MediFollow fonctionne parfaitement</Say>
+</Response>`;
+
+    res.set('Content-Type', 'text/xml');
+    return res.send(xml);
   }
 
   @Post('twilio/gather')
@@ -31,7 +34,8 @@ export class VoiceCallsController {
   }
 
   @Post('twilio/status')
-  async handleTwilioStatus(@Body() dto: TwilioVoiceWebhookDto & Record<string, unknown>) {
-    return this.voiceCallsService.handleStatus(dto);
+  handleTwilioStatus(@Body() body: Record<string, unknown>) {
+    console.log('Twilio status webhook:', body);
+    return { success: true };
   }
 }
