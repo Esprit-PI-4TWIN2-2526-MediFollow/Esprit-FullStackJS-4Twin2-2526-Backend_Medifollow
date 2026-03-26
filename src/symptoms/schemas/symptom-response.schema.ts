@@ -57,6 +57,9 @@ export class SymptomResponse {
   @Prop({ type: String, default: null })
   validatedByName?: string | null;
 
+  @Prop({ type: String, default: null })
+  validatedByRole?: string | null;
+
   @Prop({ type: Date, default: null })
   validatedAt?: Date | null;
 

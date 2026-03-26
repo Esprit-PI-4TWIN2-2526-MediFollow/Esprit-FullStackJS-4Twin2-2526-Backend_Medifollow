@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Symptom, SymptomSchema } from './schemas/symptom.schema';
 import { SymptomResponse, SymptomResponseSchema } from './schemas/symptom-response.schema';
 import { User, UserSchema } from 'src/users/users.schema';
+import { Role, RoleSchema } from 'src/role/schemas/role.schema';
 
 @Module({
   imports: [
@@ -12,9 +13,11 @@ import { User, UserSchema } from 'src/users/users.schema';
       { name: Symptom.name, schema: SymptomSchema },
       { name: SymptomResponse.name, schema: SymptomResponseSchema },
       { name: User.name, schema: UserSchema },
+      { name: Role.name, schema: RoleSchema },
     ]),
   ],
   controllers: [SymptomsController],
   providers: [SymptomsService],
+  exports: [SymptomsService],
 })
 export class SymptomsModule {}

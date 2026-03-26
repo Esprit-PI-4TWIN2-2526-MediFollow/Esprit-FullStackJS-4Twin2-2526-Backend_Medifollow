@@ -19,6 +19,7 @@ import { UpdateSymptomDto } from './dto/update-symptom.dto';
 import { Question, QuestionType } from './schemas/question.schema';
 import { ResponseActionDto } from './dto/response-action.dto';
 import { User, UserDocument } from 'src/users/users.schema';
+import { Role, RoleDocument } from 'src/role/schemas/role.schema';
 
 // ── Mapping: medical service → clinical focus areas ──────────────────────────
 //
@@ -154,9 +155,18 @@ type NurseVisibleResponseItem = {
   validated: boolean;
   validatedBy: string | null;
   validatedByName: string | null;
+  validatedByRole: string | null;
   validatedAt: Date | null;
   validationNote: string;
   issueReported: boolean;
+};
+
+type AuthUserPayload = { sub?: string; userId?: string };
+
+type ScopedStaffUser = {
+  user: UserDocument;
+  roleName: string;
+  department: string | null;
 };
 
 @Injectable()
@@ -172,6 +182,8 @@ export class SymptomsService {
     private symptomResponseModel: Model<SymptomResponseDocument>,
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
+    @InjectModel(Role.name)
+    private roleModel: Model<RoleDocument>,
   ) {}
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -436,6 +448,7 @@ export class SymptomsService {
       validated: false,
       validatedBy: null,
       validatedByName: null,
+      validatedByRole: null,
       validatedAt: null,
       validationNote: '',
       issueReported: false,
@@ -537,54 +550,78 @@ export class SymptomsService {
   }
 
   async getResponsesForValidation(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
   ): Promise<NurseVisibleResponseItem[]> {
     return this.listNurseResponses(authUser);
   }
 
-  async getNurseResponses(authUser: { sub?: string; userId?: string }): Promise<NurseVisibleResponseItem[]> {
+  async getNurseResponses(authUser: AuthUserPayload): Promise<NurseVisibleResponseItem[]> {
     return this.listNurseResponses(authUser);
   }
 
   async getPendingNurseResponses(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
   ): Promise<NurseVisibleResponseItem[]> {
     return this.listNurseResponses(authUser, false);
   }
 
   async getValidatedNurseResponses(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
   ): Promise<NurseVisibleResponseItem[]> {
     return this.listNurseResponses(authUser, true);
   }
 
   async getNurseResponseById(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
     responseId: string,
   ): Promise<NurseVisibleResponseItem> {
-    const nurse = await this.getNurseUser(authUser);
-    const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
-    const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
+    const staff = await this.getScopedStaffUser(authUser, ['nurse']);
+    const response = await this.findVisibleResponse(responseId, staff.department);
+    const patient = await this.getPatientForVisibleResponse(response, staff.department);
+
+    return this.formatNurseResponse(response, patient);
+  }
+
+  async getCoordinatorResponses(authUser: AuthUserPayload): Promise<NurseVisibleResponseItem[]> {
+    return this.listCoordinatorResponses(authUser);
+  }
+
+  async getPendingCoordinatorResponses(authUser: AuthUserPayload): Promise<NurseVisibleResponseItem[]> {
+    return this.listCoordinatorResponses(authUser, false);
+  }
+
+  async getValidatedCoordinatorResponses(authUser: AuthUserPayload): Promise<NurseVisibleResponseItem[]> {
+    return this.listCoordinatorResponses(authUser, true);
+  }
+
+  async getCoordinatorResponseById(
+    authUser: AuthUserPayload,
+    responseId: string,
+  ): Promise<NurseVisibleResponseItem> {
+    const staff = await this.getScopedStaffUser(authUser, ['coordinator']);
+    const response = await this.findVisibleResponse(responseId, staff.department);
+    const patient = await this.getPatientForVisibleResponse(response, staff.department);
 
     return this.formatNurseResponse(response, patient);
   }
 
   async validateResponse(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
     responseId: string,
     dto: ResponseActionDto,
   ): Promise<NurseVisibleResponseItem> {
-    const nurse = await this.getNurseUser(authUser);
-    const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
-    const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
+    const staff = await this.getScopedStaffUser(authUser, ['nurse', 'coordinator']);
+    const response = await this.findVisibleResponse(responseId, staff.department);
+    const patient = await this.getPatientForVisibleResponse(response, staff.department);
 
     if (response.validated) {
       throw new ConflictException('Response already validated');
     }
 
     response.validated = true;
-    response.validatedBy = nurse._id.toString();
-    response.validatedByName = this.buildUserDisplayName(nurse);
+    response.validatedBy = staff.user._id.toString();
+    response.validatedByName = this.buildUserDisplayName(staff.user);
+    response.validatedByRole = staff.roleName;
     response.validatedAt = new Date();
     response.validationNote = dto.note?.trim() ?? '';
 
@@ -594,13 +631,13 @@ export class SymptomsService {
   }
 
   async reportIssue(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
     responseId: string,
     dto: ResponseActionDto,
   ): Promise<NurseVisibleResponseItem> {
-    const nurse = await this.getNurseUser(authUser);
-    const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
-    const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
+    const staff = await this.getScopedStaffUser(authUser, ['nurse', 'coordinator']);
+    const response = await this.findVisibleResponse(responseId, staff.department);
+    const patient = await this.getPatientForVisibleResponse(response, staff.department);
 
     response.issueReported = true;
 
@@ -614,6 +651,21 @@ export class SymptomsService {
     await response.save();
 
     return this.formatNurseResponse(response, patient);
+  }
+
+  async getValidatedSymptomsForDoctor(
+    authUser: AuthUserPayload,
+    patientId: string,
+  ): Promise<NurseVisibleResponseItem[]> {
+    const doctor = await this.getScopedStaffUser(authUser, ['doctor']);
+    const patient = await this.getPatientById(patientId, doctor.department);
+    const responses = await this.symptomResponseModel
+      .find({ patientId: patient._id.toString(), validated: true })
+      .populate('symptomFormId')
+      .sort({ createdAt: -1, _id: -1 })
+      .exec();
+
+    return responses.map((response) => this.formatNurseResponse(response, patient));
   }
 
   // ── AI Question Generation ────────────────────────────────────────────────────
@@ -929,25 +981,26 @@ Return raw JSON array only.
   }
 
   private async listNurseResponses(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
     validated?: boolean,
   ): Promise<NurseVisibleResponseItem[]> {
-    const nurse = await this.getNurseUser(authUser);
-    const nurseDepartment = this.normalizeDepartment(nurse.assignedDepartment);
-    const patients = await this.userModel
-      .find({
-        assignedDepartment: {
-          $regex: `^${this.escapeRegex(nurse.assignedDepartment ?? '')}$`,
-          $options: 'i',
-        },
-      })
-      .select('_id firstName lastName email assignedDepartment')
-      .exec();
+    const nurse = await this.getScopedStaffUser(authUser, ['nurse']);
+    return this.listVisibleResponsesByDepartment(nurse.department, validated);
+  }
 
-    const visiblePatients = patients.filter(
-      (patient) => this.normalizeDepartment(patient.assignedDepartment) === nurseDepartment,
-    );
+  private async listCoordinatorResponses(
+    authUser: AuthUserPayload,
+    validated?: boolean,
+  ): Promise<NurseVisibleResponseItem[]> {
+    const coordinator = await this.getScopedStaffUser(authUser, ['coordinator']);
+    return this.listVisibleResponsesByDepartment(coordinator.department, validated);
+  }
 
+  private async listVisibleResponsesByDepartment(
+    department: string | null,
+    validated?: boolean,
+  ): Promise<NurseVisibleResponseItem[]> {
+    const visiblePatients = await this.getPatientsForDepartment(department);
     const patientIds = visiblePatients.map((patient) => patient._id.toString());
     if (patientIds.length === 0) {
       return [];
@@ -981,28 +1034,41 @@ Return raw JSON array only.
       .filter((item): item is NurseVisibleResponseItem => item !== null);
   }
 
-  private async getNurseUser(authUser: { sub?: string; userId?: string }): Promise<UserDocument> {
+  private async getScopedStaffUser(
+    authUser: AuthUserPayload,
+    allowedRoles: string[],
+  ): Promise<ScopedStaffUser> {
     const authUserId = this.extractAuthUserId(authUser);
 
     if (!authUserId || !isValidObjectId(authUserId)) {
       throw new ForbiddenException('Invalid authenticated user');
     }
 
-    const nurse = await this.userModel.findById(authUserId).exec();
-    if (!nurse) {
-      throw new NotFoundException('Authenticated nurse not found');
+    const staffUser = await this.userModel.findById(authUserId).exec();
+    if (!staffUser) {
+      throw new NotFoundException('Authenticated user not found');
     }
 
-    if (!nurse.assignedDepartment?.trim()) {
-      throw new ForbiddenException('Nurse department is not configured');
+    const roleName = await this.resolveUserRoleName(staffUser);
+    if (!allowedRoles.includes(roleName)) {
+      throw new ForbiddenException('You are not allowed to access this resource');
     }
 
-    return nurse;
+    const department = staffUser.assignedDepartment?.trim() ?? null;
+    if (!department) {
+      throw new ForbiddenException('Assigned department is not configured');
+    }
+
+    return {
+      user: staffUser,
+      roleName,
+      department,
+    };
   }
 
-  private async findVisibleResponseForNurse(
+  private async findVisibleResponse(
     responseId: string,
-    department: string,
+    department: string | null,
   ): Promise<SymptomResponseDocument> {
     if (!responseId || !isValidObjectId(responseId)) {
       throw new BadRequestException('Invalid symptom response id');
@@ -1024,7 +1090,7 @@ Return raw JSON array only.
 
   private async getPatientForVisibleResponse(
     response: SymptomResponseDocument,
-    department: string,
+    department: string | null,
   ): Promise<UserDocument> {
     const patientId = response.patientId?.trim();
 
@@ -1032,6 +1098,13 @@ Return raw JSON array only.
       throw new ForbiddenException('Response has no valid patient reference');
     }
 
+    return this.getPatientById(patientId, department);
+  }
+
+  private async getPatientById(
+    patientId: string,
+    department: string | null,
+  ): Promise<UserDocument> {
     const patient = await this.userModel
       .findById(patientId)
       .select('_id firstName lastName email assignedDepartment')
@@ -1041,11 +1114,35 @@ Return raw JSON array only.
       throw new NotFoundException(`Patient ${patientId} not found`);
     }
 
-    if (this.normalizeDepartment(patient.assignedDepartment) !== this.normalizeDepartment(department)) {
+    if (
+      department &&
+      this.normalizeDepartment(patient.assignedDepartment) !== this.normalizeDepartment(department)
+    ) {
       throw new ForbiddenException('You cannot access responses outside your department');
     }
 
     return patient;
+  }
+
+  private async getPatientsForDepartment(department: string | null): Promise<UserDocument[]> {
+    if (!department) {
+      return [];
+    }
+
+    const patients = await this.userModel
+      .find({
+        assignedDepartment: {
+          $regex: `^${this.escapeRegex(department)}$`,
+          $options: 'i',
+        },
+      })
+      .select('_id firstName lastName email assignedDepartment')
+      .exec();
+
+    return patients.filter(
+      (patient) =>
+        this.normalizeDepartment(patient.assignedDepartment) === this.normalizeDepartment(department),
+    );
   }
 
   private formatNurseResponse(
@@ -1085,6 +1182,7 @@ Return raw JSON array only.
       validated: response.validated ?? false,
       validatedBy: response.validatedBy ?? null,
       validatedByName: response.validatedByName ?? null,
+      validatedByRole: response.validatedByRole ?? null,
       validatedAt: response.validatedAt ?? null,
       validationNote: response.validationNote ?? '',
       issueReported: response.issueReported ?? false,
@@ -1100,6 +1198,26 @@ Return raw JSON array only.
 
   private extractAuthUserId(authUser: { sub?: string; userId?: string } | null | undefined): string {
     return authUser?.sub ?? authUser?.userId ?? '';
+  }
+
+  private async resolveUserRoleName(user: UserDocument): Promise<string> {
+    const roleValue = user.role as unknown;
+
+    if (roleValue && typeof roleValue === 'object' && 'name' in roleValue) {
+      const roleName = roleValue.name;
+      return typeof roleName === 'string' ? roleName.trim().toLowerCase() : '';
+    }
+
+    if (typeof roleValue === 'string') {
+      if (!isValidObjectId(roleValue)) {
+        return roleValue.trim().toLowerCase();
+      }
+
+      const role = await this.roleModel.findById(roleValue).select('name').lean().exec();
+      return role?.name?.trim().toLowerCase() ?? '';
+    }
+
+    return '';
   }
 
   private normalizeDepartment(department: string | null | undefined): string {
