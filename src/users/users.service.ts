@@ -394,15 +394,7 @@ async findByRole(role: string) {
       throw new BadRequestException('Email is required');
     }
 
-    try {
-      return await this.userModel.findOne({ email: normalizedEmail }).populate('role').exec();
-    } catch (error: any) {
-      // Legacy data can contain non-ObjectId role values; avoid signin crash.
-      if (error?.name === 'CastError') {
-        return this.userModel.findOne({ email: normalizedEmail }).exec();
-      }
-      throw error;
-    }
+    return this.userModel.findOne({ email: normalizedEmail }).exec();
   }
   async updateUserRole(userId: string, roleIdOrName: string) {
     if (!userId || !isValidObjectId(userId)) {
