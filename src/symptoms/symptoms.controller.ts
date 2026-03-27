@@ -104,6 +104,30 @@ export class SymptomsController {
     return this.service.getNurseResponseById(req.user, id);
   }
 
+  @Get('coordinator/responses')
+  @UseGuards(JwtAuthGuard)
+  getCoordinatorResponses(@Req() req) {
+    return this.service.getCoordinatorResponses(req.user);
+  }
+
+  @Get('coordinator/responses/pending')
+  @UseGuards(JwtAuthGuard)
+  getPendingCoordinatorResponses(@Req() req) {
+    return this.service.getPendingCoordinatorResponses(req.user);
+  }
+
+  @Get('coordinator/responses/validated')
+  @UseGuards(JwtAuthGuard)
+  getValidatedCoordinatorResponses(@Req() req) {
+    return this.service.getValidatedCoordinatorResponses(req.user);
+  }
+
+  @Get('coordinator/responses/:id')
+  @UseGuards(JwtAuthGuard)
+  getCoordinatorResponseById(@Param('id') id: string, @Req() req) {
+    return this.service.getCoordinatorResponseById(req.user, id);
+  }
+
   @Patch('response/:id/validate')
   @UseGuards(JwtAuthGuard)
   patchValidateResponse(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
@@ -126,6 +150,24 @@ export class SymptomsController {
   @UseGuards(JwtAuthGuard)
   reportIssue(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
     return this.service.reportIssue(req.user, id, dto);
+  }
+
+  @Post('coordinator/responses/:id/validate')
+  @UseGuards(JwtAuthGuard)
+  validateResponseAsCoordinator(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
+    return this.service.validateResponse(req.user, id, dto);
+  }
+
+  @Post('coordinator/responses/:id/report-issue')
+  @UseGuards(JwtAuthGuard)
+  reportIssueAsCoordinator(@Param('id') id: string, @Body() dto: ResponseActionDto, @Req() req) {
+    return this.service.reportIssue(req.user, id, dto);
+  }
+
+  @Get('doctor/patient/:patientId/view-symptoms')
+  @UseGuards(JwtAuthGuard)
+  getValidatedSymptomsForDoctor(@Param('patientId') patientId: string, @Req() req) {
+    return this.service.getValidatedSymptomsForDoctor(req.user, patientId);
   }
 
   @Post('generate')
