@@ -6,6 +6,7 @@ import { Symptom, SymptomSchema } from './schemas/symptom.schema';
 import { SymptomResponse, SymptomResponseSchema } from './schemas/symptom-response.schema';
 import { User, UserSchema } from 'src/users/users.schema';
 import { Role, RoleSchema } from 'src/role/schemas/role.schema';
+import { AlertModule } from 'src/alert/alert.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { Role, RoleSchema } from 'src/role/schemas/role.schema';
       { name: User.name, schema: UserSchema },
       { name: Role.name, schema: RoleSchema },
     ]),
+    AlertModule
   ],
   controllers: [SymptomsController],
   providers: [SymptomsService],

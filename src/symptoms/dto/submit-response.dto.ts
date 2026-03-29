@@ -8,7 +8,9 @@ export class SubmitResponseDto {
 
   @IsOptional()
   patientId?: string;
-
+//j'ai ajoute ca pour alerte
+@IsOptional()
+assignedDoctorId?:string
   @IsOptional()
   answers: any;
 
