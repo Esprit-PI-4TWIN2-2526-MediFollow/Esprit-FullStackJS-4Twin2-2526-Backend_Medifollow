@@ -19,6 +19,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { SymptomsModule } from './symptoms/symptoms.module';
 import { CoordinatorModule } from './coordinator/coordinator.module';
 import { VoiceCallsModule } from './voice-calls/voice-calls.module';
+import { AlertModule } from './alert/alert.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -49,6 +50,7 @@ import { VoiceCallsModule } from './voice-calls/voice-calls.module';
     SymptomsModule,
     CoordinatorModule,
     VoiceCallsModule,
+    AlertModule,
   ],
   controllers: [AppController],
   providers: [AppService],

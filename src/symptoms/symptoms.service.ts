@@ -20,6 +20,7 @@ import { Question, QuestionType } from './schemas/question.schema';
 import { ResponseActionDto } from './dto/response-action.dto';
 import { User, UserDocument } from 'src/users/users.schema';
 import { Role, RoleDocument } from 'src/role/schemas/role.schema';
+import { AlertsService } from 'src/alert/alerts.service';
 
 // ── Mapping: medical service → clinical focus areas ──────────────────────────
 //
@@ -184,6 +185,7 @@ export class SymptomsService {
     private userModel: Model<UserDocument>,
     @InjectModel(Role.name)
     private roleModel: Model<RoleDocument>,
+    private readonly alertsService: AlertsService,   // ← Injection du service d'alertes
   ) {}
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -367,12 +369,15 @@ export class SymptomsService {
   }
 
   async saveResponse(dto: SubmitResponseDto): Promise<SymptomResponse> {
+   console.log('🔥 [SYMPTOMS SERVICE] saveResponse appelée !');
+  console.log('📥 DTO reçu:', JSON.stringify(dto, null, 2));
+   
     if (!dto.formId || !isValidObjectId(dto.formId)) {
       throw new BadRequestException('Invalid formId');
     }
 
     const normalizedPatientId = typeof dto.patientId === 'string' ? dto.patientId.trim() : '';
-
+    console.log(`👤 Patient ID normalisé: ${normalizedPatientId || 'AUCUN'}`);
     if (dto.patientId && !normalizedPatientId) {
       throw new BadRequestException('Invalid patientId');
     }
@@ -381,6 +386,8 @@ export class SymptomsService {
       .findById(dto.formId)
       .exec();
 
+     
+
     if (!symptomForm) {
       throw new NotFoundException(`Symptom form ${dto.formId} not found`);
     }
@@ -388,6 +395,7 @@ export class SymptomsService {
     if (!Array.isArray(dto.answers) || dto.answers.length === 0) {
       throw new BadRequestException('answers must be a non-empty array');
     }
+   
 
     const responseDate = this.normalizeDate(dto.date ? new Date(dto.date) : new Date());
 
@@ -453,13 +461,134 @@ export class SymptomsService {
       validationNote: '',
       issueReported: false,
     });
+    await response.save(); //j'ai ajouté ca pour alerte
+console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
 
-    return response.save();
+    // === NOUVELLE PARTIE : VÉRIFICATION D'ALERTE IA ===
+   if (normalizedPatientId) {
+      console.log(`🔍 [ALERTE] Soumission détectée pour patient: ${normalizedPatientId}`);
+
+       // ── Récupérer le doctorId du patient ──────────────────
+  let doctorId: string | undefined = dto.assignedDoctorId;
+
+  if (!doctorId) {
+    try {
+      const patient = await this.userModel.findById(normalizedPatientId)
+        .select('primaryDoctor')
+        .lean()
+        .exec();
+
+      if (patient?.primaryDoctor) {
+        // primaryDoctor est un nom "Dr. Ahmed Ben Ali" → chercher par nom
+        const doctorName = String(patient.primaryDoctor).trim();
+        
+        // Essayer de trouver par firstName + lastName
+        const nameParts = doctorName.replace(/^Dr\.?\s*/i, '').trim().split(' ');
+        const firstName = nameParts[0];
+        const lastName  = nameParts.slice(1).join(' ');
+
+        const doctor = await this.userModel.findOne({
+          $or: [
+            { firstName, lastName },
+            { firstName: { $regex: `^${firstName}$`, $options: 'i' },
+              lastName:  { $regex: `^${lastName}$`,  $options: 'i' } },
+          ]
+        }).select('_id').lean().exec();
+
+        if (doctor) {
+          doctorId = String(doctor._id);
+          console.log(`👨‍⚕️ Médecin trouvé: ${doctorName} → ID: ${doctorId}`);
+        } else {
+          console.warn(`⚠️ Médecin "${doctorName}" non trouvé en base`);
+        }
+      }
+    } catch (err) {
+      console.error('Erreur récupération médecin:', err.message);
+    }
+  }
+
+     // ← passer questionMap ici
+     
+      // ── Extraire les vitaux ────────────────────────────────
+  const questionMap = new Map(
+    symptomForm.questions.map((q: any) => [
+      q._id?.toString(),
+      q.label || ''
+    ])
+  );
+  const vitalsForAlert = this.extractVitalsForAlert(normalizedAnswers, questionMap);
+  console.log(`📊 Vitals envoyés à FastAPI:`, vitalsForAlert);
+
+  const alertResult = await this.alertsService.checkAndCreateAlert(
+    normalizedPatientId,
+    response._id.toString(),
+    vitalsForAlert,
+    doctorId, 
+  );
+
+  if (alertResult) {
+    console.log(`✅ Alerte créée ! Severity: ${alertResult.severity}`);
+  } else {
+    console.log(`ℹ️ Aucune alerte déclenchée`);
+  }
+    }
+
+    
+
+    return response;
+    //fin partie
+    //return response.save();
   }
 
   async submitResponse(dto: SubmitResponseDto): Promise<SymptomResponse> {
     return this.saveResponse(dto);
   }
+
+
+  /**
+   * Extrait les vitals pour l'alerte IA (simplifié)
+   */
+  private extractVitalsForAlert(
+  answers: Array<{ questionId: string; value: any }>,
+  questionMap: Map<string, string>  
+) {
+  const vitals: any = {
+    heartRate: null,
+    spo2: null,
+    temperature: null,
+    systolicBP: null,
+    diastolicBP: null,
+  };
+
+  answers.forEach((ans) => {
+    // Récupérer le label via questionMap
+    const label = (questionMap.get(ans.questionId) || '').toLowerCase();
+
+    if (label.includes('heart rate') || label.includes('rythme cardiaque') || label.includes('pulse')) {
+      vitals.heartRate = parseFloat(ans.value);
+    }
+    if (label.includes('spo2') || label.includes('oxygen') || label.includes('saturation')) {
+      vitals.spo2 = parseFloat(ans.value);
+    }
+    if (label.includes('température') || label.includes('temperature') || label.includes('°c')) {
+      vitals.temperature = parseFloat(ans.value);
+    }
+    if (label.includes('blood pressure') || label.includes('tension')) {
+      if (typeof ans.value === 'string' && ans.value.includes('/')) {
+        const [sys, dia] = ans.value.split('/');
+        vitals.systolicBP = parseFloat(sys);
+        vitals.diastolicBP = parseFloat(dia);
+      }
+    }
+  });
+
+  console.log('📊 Vitals finaux envoyés à FastAPI:', vitals);
+  return vitals;
+}
+
+  //fin alerte
+
+
 
   async getTodayResponse(patientId: string): Promise<SymptomResponse | null> {
     const normalizedPatientId = patientId?.trim();
