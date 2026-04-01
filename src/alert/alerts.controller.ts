@@ -13,6 +13,13 @@ export class AlertsController {
     return this.alertsService.getAlertsByPatient(patientId);
   }
 
+  // alert.controller.ts
+
+@Get(':id')
+async getAlertById(@Param('id') id: string) {
+  return this.alertsService.findOne(id);
+}
+
   // Alertes non lues pour un médecin (à utiliser dans le dashboard médecin)
   @Get('doctor/:doctorId/unread')
 async getDoctorUnreadAlerts(@Param('doctorId') doctorId: string) {

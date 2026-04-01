@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Alert } from './schemas/alert.schema';
@@ -61,6 +61,22 @@ export class AlertsService {
       .populate('response', 'createdAt')
       .exec();
   }
+
+// alert.service.ts
+
+async findOne(id: string): Promise<Alert> {
+  const alert = await this.alertModel
+    .findById(id)
+    .populate('patient', 'firstName lastName email avatarUrl phoneNumber')  // ← Important : populate le patient
+    .exec();
+
+  if (!alert) {
+    throw new NotFoundException(`Alert with ID ${id} not found`);
+  }
+
+  return alert;
+}
+
 
   // Récupérer les alertes non lues pour un médecin
   /* async getUnreadAlertsForDoctor(doctorId: string) {
