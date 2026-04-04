@@ -7,6 +7,7 @@ import { User, UserSchema } from './users.schema';
 import { Role, RoleSchema } from 'src/role/schemas/role.schema';
 import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
 import { EmailModule } from './email/email.module';
+import { TwoFactorService } from './two-factor.service';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { EmailModule } from './email/email.module';
     EmailModule 
   ],
   controllers: [UsersController],
-  providers: [UsersService],
-  exports: [UsersService],
+  providers: [UsersService, TwoFactorService],
+  exports: [UsersService, TwoFactorService],
 })
 export class UsersModule { }
