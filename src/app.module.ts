@@ -2,7 +2,6 @@ import { CommunicationModule } from './communication/communication.module';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from './users/users.module';
 import { RoleModule } from './role/role.module';
@@ -18,25 +17,29 @@ import { AiModule } from './ai/ai.module';
 import { ServiceModule } from './service/service.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { SymptomsModule } from './symptoms/symptoms.module';
+import { CoordinatorModule } from './coordinator/coordinator.module';
+import { VoiceCallsModule } from './voice-calls/voice-calls.module';
+import { AlertModule } from './alert/alert.module';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { DatabaseModule } from './database/database.module';
 @Module({
   imports: [
-
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-
     }),
     ScheduleModule.forRoot(),
-    MongooseModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        uri: config.get<string>('MONGODB_URI'),
-        dbName: config.get<string>('MONGODB_NAME'),
+    // MongooseModule.forRootAsync({
+    //   imports: [ConfigModule],
+    //   useFactory: (config: ConfigService) => ({
+    //     uri: config.get<string>('MONGODB_URI'),
+    //     dbName: config.get<string>('MONGODB_NAME'),
 
-      }),
-      inject: [ConfigService],
+    //   }),
+    //   inject: [ConfigService],
       
-    }),
+    // }),
+    DatabaseModule,
     UsersModule,
     AuthModule,
     EmailModule,
@@ -49,7 +52,10 @@ import { SymptomsModule } from './symptoms/symptoms.module';
     ServiceModule,
     DashboardModule,
     SymptomsModule,
-    CommunicationModule
+    CommunicationModule,
+    CoordinatorModule,
+    VoiceCallsModule,
+    AlertModule,
   ],
   controllers: [AppController],
   providers: [AppService],

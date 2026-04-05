@@ -16,9 +16,11 @@ import { SubmitResponseDto } from './dto/submit-response.dto';
 import { GenerateSymptomDto } from './dto/generate-symptom.dto';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateSymptomDto } from './dto/update-symptom.dto';
-import { Question, QuestionType } from './schemas/question.schema';
+import { Question, QuestionCategory, QuestionType } from './schemas/question.schema';
 import { ResponseActionDto } from './dto/response-action.dto';
 import { User, UserDocument } from 'src/users/users.schema';
+import { Role, RoleDocument } from 'src/role/schemas/role.schema';
+import { AlertsService } from 'src/alert/alerts.service';
 
 // ── Mapping: medical service → clinical focus areas ──────────────────────────
 //
@@ -108,6 +110,7 @@ type FrontendGeneratedQuestion = {
   label: string;
   type: FrontendQuestionType;
   options: string[];
+  category?: string;
 };
 
 const FRONTEND_QUESTION_TYPES: FrontendQuestionType[] = [
@@ -154,9 +157,18 @@ type NurseVisibleResponseItem = {
   validated: boolean;
   validatedBy: string | null;
   validatedByName: string | null;
+  validatedByRole: string | null;
   validatedAt: Date | null;
   validationNote: string;
   issueReported: boolean;
+};
+
+type AuthUserPayload = { sub?: string; userId?: string };
+
+type ScopedStaffUser = {
+  user: UserDocument;
+  roleName: string;
+  department: string | null;
 };
 
 @Injectable()
@@ -172,6 +184,9 @@ export class SymptomsService {
     private symptomResponseModel: Model<SymptomResponseDocument>,
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
+    @InjectModel(Role.name)
+    private roleModel: Model<RoleDocument>,
+    private readonly alertsService: AlertsService,   // ← Injection du service d'alertes
   ) {}
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -355,12 +370,15 @@ export class SymptomsService {
   }
 
   async saveResponse(dto: SubmitResponseDto): Promise<SymptomResponse> {
+   console.log('🔥 [SYMPTOMS SERVICE] saveResponse appelée !');
+  console.log('📥 DTO reçu:', JSON.stringify(dto, null, 2));
+   
     if (!dto.formId || !isValidObjectId(dto.formId)) {
       throw new BadRequestException('Invalid formId');
     }
 
     const normalizedPatientId = typeof dto.patientId === 'string' ? dto.patientId.trim() : '';
-
+    console.log(`👤 Patient ID normalisé: ${normalizedPatientId || 'AUCUN'}`);
     if (dto.patientId && !normalizedPatientId) {
       throw new BadRequestException('Invalid patientId');
     }
@@ -369,6 +387,8 @@ export class SymptomsService {
       .findById(dto.formId)
       .exec();
 
+     
+
     if (!symptomForm) {
       throw new NotFoundException(`Symptom form ${dto.formId} not found`);
     }
@@ -376,6 +396,7 @@ export class SymptomsService {
     if (!Array.isArray(dto.answers) || dto.answers.length === 0) {
       throw new BadRequestException('answers must be a non-empty array');
     }
+   
 
     const responseDate = this.normalizeDate(dto.date ? new Date(dto.date) : new Date());
 
@@ -436,17 +457,156 @@ export class SymptomsService {
       validated: false,
       validatedBy: null,
       validatedByName: null,
+      validatedByRole: null,
       validatedAt: null,
       validationNote: '',
       issueReported: false,
     });
+    await response.save(); //j'ai ajouté ca pour alerte
+console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
 
-    return response.save();
+    // === NOUVELLE PARTIE : VÉRIFICATION D'ALERTE IA ===
+   if (normalizedPatientId) {
+      console.log(`🔍 [ALERTE] Soumission détectée pour patient: ${normalizedPatientId}`);
+
+       // ── Récupérer le doctorId du patient ──────────────────
+  let doctorId: string | undefined = dto.assignedDoctorId;
+
+  if (!doctorId) {
+    try {
+      const patient = await this.userModel.findById(normalizedPatientId)
+        .select('primaryDoctor')
+        .lean()
+        .exec();
+
+      if (patient?.primaryDoctor) {
+        // primaryDoctor est un nom "Dr. Ahmed Ben Ali" → chercher par nom
+        const doctorName = String(patient.primaryDoctor).trim();
+        
+        // Essayer de trouver par firstName + lastName
+        const nameParts = doctorName.replace(/^Dr\.?\s*/i, '').trim().split(' ');
+        const firstName = nameParts[0];
+        const lastName  = nameParts.slice(1).join(' ');
+
+        const doctor = await this.userModel.findOne({
+          $or: [
+            { firstName, lastName },
+            { firstName: { $regex: `^${firstName}$`, $options: 'i' },
+              lastName:  { $regex: `^${lastName}$`,  $options: 'i' } },
+          ]
+        }).select('_id').lean().exec();
+
+        if (doctor) {
+          doctorId = String(doctor._id);
+          console.log(`👨‍⚕️ Médecin trouvé: ${doctorName} → ID: ${doctorId}`);
+        } else {
+          console.warn(`⚠️ Médecin "${doctorName}" non trouvé en base`);
+        }
+      }
+    } catch (err) {
+      console.error('Erreur récupération médecin:', err.message);
+    }
+  }
+
+     // ← passer questionMap ici
+     
+      // ── Extraire les vitaux ────────────────────────────────
+  const questionMap = new Map(
+    symptomForm.questions.map((q: any) => [
+      q._id?.toString(),
+      {
+        label: q.label || '',
+        category: q.category || null,
+      },
+    ])
+  );
+  const vitalsForAlert = this.extractVitalsForAlert(normalizedAnswers, questionMap);
+  console.log(`📊 Vitals envoyés à FastAPI:`, vitalsForAlert);
+
+  const alertResult = await this.alertsService.checkAndCreateAlert(
+    normalizedPatientId,
+    response._id.toString(),
+    vitalsForAlert,
+    doctorId, 
+  );
+
+  if (alertResult) {
+    console.log(`✅ Alerte créée ! Severity: ${alertResult.severity}`);
+  } else {
+    console.log(`ℹ️ Aucune alerte déclenchée`);
+  }
+    }
+
+    
+
+    return response;
+    //fin partie
+    //return response.save();
   }
 
   async submitResponse(dto: SubmitResponseDto): Promise<SymptomResponse> {
     return this.saveResponse(dto);
   }
+
+
+  /**
+   * Extrait les vitals pour l'alerte IA (simplifié)
+   */
+  private extractVitalsForAlert(
+  answers: Array<{ questionId: string; value: any }>,
+  questionMap: Map<string, { label: string; category?: string | null }>  
+) {
+  const vitals: any = {
+    heartRate: null,
+    spo2: null,
+    temperature: null,
+    systolicBP: null,
+    diastolicBP: null,
+  };
+
+  answers.forEach((ans) => {
+    const question = questionMap.get(ans.questionId);
+    const label = (question?.label || '').toLowerCase();
+
+    if (question?.category === 'vital_parameters') {
+      if (label.includes('heart rate') || label.includes('rythme cardiaque') || label.includes('pulse')) {
+        vitals.heartRate = parseFloat(ans.value);
+      }
+      if (label.includes('spo2') || label.includes('oxygen') || label.includes('saturation')) {
+        vitals.spo2 = parseFloat(ans.value);
+      }
+      if (label.includes('température') || label.includes('temperature') || label.includes('°c')) {
+        vitals.temperature = parseFloat(ans.value);
+      }
+      if (label.includes('blood pressure') || label.includes('tension')) {
+        if (typeof ans.value === 'string' && ans.value.includes('/')) {
+          const [sys, dia] = ans.value.split('/');
+          vitals.systolicBP = parseFloat(sys);
+          vitals.diastolicBP = parseFloat(dia);
+        }
+      }
+    } else if (label.includes('heart rate') || label.includes('rythme cardiaque') || label.includes('pulse')) {
+      vitals.heartRate = parseFloat(ans.value);
+    } else if (label.includes('spo2') || label.includes('oxygen') || label.includes('saturation')) {
+      vitals.spo2 = parseFloat(ans.value);
+    } else if (label.includes('température') || label.includes('temperature') || label.includes('°c')) {
+      vitals.temperature = parseFloat(ans.value);
+    } else if (label.includes('blood pressure') || label.includes('tension')) {
+      if (typeof ans.value === 'string' && ans.value.includes('/')) {
+        const [sys, dia] = ans.value.split('/');
+        vitals.systolicBP = parseFloat(sys);
+        vitals.diastolicBP = parseFloat(dia);
+      }
+    }
+  });
+
+  console.log('📊 Vitals finaux envoyés à FastAPI:', vitals);
+  return vitals;
+}
+
+  //fin alerte
+
+
 
   async getTodayResponse(patientId: string): Promise<SymptomResponse | null> {
     const normalizedPatientId = patientId?.trim();
@@ -537,54 +697,78 @@ export class SymptomsService {
   }
 
   async getResponsesForValidation(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
   ): Promise<NurseVisibleResponseItem[]> {
     return this.listNurseResponses(authUser);
   }
 
-  async getNurseResponses(authUser: { sub?: string; userId?: string }): Promise<NurseVisibleResponseItem[]> {
+  async getNurseResponses(authUser: AuthUserPayload): Promise<NurseVisibleResponseItem[]> {
     return this.listNurseResponses(authUser);
   }
 
   async getPendingNurseResponses(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
   ): Promise<NurseVisibleResponseItem[]> {
     return this.listNurseResponses(authUser, false);
   }
 
   async getValidatedNurseResponses(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
   ): Promise<NurseVisibleResponseItem[]> {
     return this.listNurseResponses(authUser, true);
   }
 
   async getNurseResponseById(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
     responseId: string,
   ): Promise<NurseVisibleResponseItem> {
-    const nurse = await this.getNurseUser(authUser);
-    const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
-    const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
+    const staff = await this.getScopedStaffUser(authUser, ['nurse']);
+    const response = await this.findVisibleResponse(responseId, staff.department);
+    const patient = await this.getPatientForVisibleResponse(response, staff.department);
+
+    return this.formatNurseResponse(response, patient);
+  }
+
+  async getCoordinatorResponses(authUser: AuthUserPayload): Promise<NurseVisibleResponseItem[]> {
+    return this.listCoordinatorResponses(authUser);
+  }
+
+  async getPendingCoordinatorResponses(authUser: AuthUserPayload): Promise<NurseVisibleResponseItem[]> {
+    return this.listCoordinatorResponses(authUser, false);
+  }
+
+  async getValidatedCoordinatorResponses(authUser: AuthUserPayload): Promise<NurseVisibleResponseItem[]> {
+    return this.listCoordinatorResponses(authUser, true);
+  }
+
+  async getCoordinatorResponseById(
+    authUser: AuthUserPayload,
+    responseId: string,
+  ): Promise<NurseVisibleResponseItem> {
+    const staff = await this.getScopedStaffUser(authUser, ['coordinator']);
+    const response = await this.findVisibleResponse(responseId, staff.department);
+    const patient = await this.getPatientForVisibleResponse(response, staff.department);
 
     return this.formatNurseResponse(response, patient);
   }
 
   async validateResponse(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
     responseId: string,
     dto: ResponseActionDto,
   ): Promise<NurseVisibleResponseItem> {
-    const nurse = await this.getNurseUser(authUser);
-    const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
-    const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
+    const staff = await this.getScopedStaffUser(authUser, ['nurse', 'coordinator']);
+    const response = await this.findVisibleResponse(responseId, staff.department);
+    const patient = await this.getPatientForVisibleResponse(response, staff.department);
 
     if (response.validated) {
       throw new ConflictException('Response already validated');
     }
 
     response.validated = true;
-    response.validatedBy = nurse._id.toString();
-    response.validatedByName = this.buildUserDisplayName(nurse);
+    response.validatedBy = staff.user._id.toString();
+    response.validatedByName = this.buildUserDisplayName(staff.user);
+    response.validatedByRole = staff.roleName;
     response.validatedAt = new Date();
     response.validationNote = dto.note?.trim() ?? '';
 
@@ -594,13 +778,13 @@ export class SymptomsService {
   }
 
   async reportIssue(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
     responseId: string,
     dto: ResponseActionDto,
   ): Promise<NurseVisibleResponseItem> {
-    const nurse = await this.getNurseUser(authUser);
-    const response = await this.findVisibleResponseForNurse(responseId, nurse.assignedDepartment);
-    const patient = await this.getPatientForVisibleResponse(response, nurse.assignedDepartment);
+    const staff = await this.getScopedStaffUser(authUser, ['nurse', 'coordinator']);
+    const response = await this.findVisibleResponse(responseId, staff.department);
+    const patient = await this.getPatientForVisibleResponse(response, staff.department);
 
     response.issueReported = true;
 
@@ -616,12 +800,28 @@ export class SymptomsService {
     return this.formatNurseResponse(response, patient);
   }
 
+  async getValidatedSymptomsForDoctor(
+    authUser: AuthUserPayload,
+    patientId: string,
+  ): Promise<NurseVisibleResponseItem[]> {
+    const doctor = await this.getScopedStaffUser(authUser, ['doctor']);
+    const patient = await this.getPatientById(patientId, doctor.department);
+    const responses = await this.symptomResponseModel
+      .find({ patientId: patient._id.toString(), validated: true })
+      .populate('symptomFormId')
+      .sort({ createdAt: -1, _id: -1 })
+      .exec();
+
+    return responses.map((response) => this.formatNurseResponse(response, patient));
+  }
+
   // ── AI Question Generation ────────────────────────────────────────────────────
 
   async generateQuestions(dto: GenerateSymptomDto): Promise<{ questions: FrontendGeneratedQuestion[] }> {
     const title             = dto.title?.trim();
     const description       = dto.description?.trim() ?? '';
     const medicalService    = dto.medicalService?.trim() ?? '';
+    const category          = dto.category?.trim();
     const numberOfQuestions = dto.numberOfQuestions ?? 7;
 
     if (!title) throw new BadRequestException('title is required');
@@ -648,8 +848,15 @@ Each element must strictly follow this structure:
 {
   "label":    "<question text in plain language>",
   "type":     "<one of: text | number | rating | yes/no | single choice | multiple choice | select | date>",
-  "options":  ["<option 1>", "<option 2>", ...]   ← always present, empty [] when not applicable
+  "options":  ["<option 1>", "<option 2>", ...],  ← always present, empty [] when not applicable
+  "category": "<one of: vital_parameters | subjective_symptoms | patient_context | clinical_data>"
 }
+
+IMPORTANT: Each generated question MUST include a "category" field with one of these exact values:
+- "vital_parameters" for vital signs (temperature, heart rate, blood pressure, SpO2, weight, respiratory rate)
+- "subjective_symptoms" for subjective symptoms (pain, fatigue, nausea, shortness of breath, etc.)
+- "patient_context" for contextual patient data (history, ongoing treatments, patient profile)
+- "clinical_data" for advanced clinical data (glycemia, CRP, diuresis, hydration)
 
 === TYPE SELECTION RULES ===
 • "number"          → measurable numeric vitals: temperature (°C), heart rate (bpm),
@@ -684,6 +891,8 @@ Each element must strictly follow this structure:
 
 === SERVICE-SPECIFIC CLINICAL FOCUS ===
 ${clinicalHints}
+
+${category ? `Generate ONLY questions from the "${category}" category.` : ''}
 `.trim();
 
     // ── User prompt ───────────────────────────────────────────────────────────
@@ -758,12 +967,13 @@ Return raw JSON array only.
         : [];
 
       return {
-        ...question,
         label:    question.label.trim(),
         type:     question.type.trim() as QuestionType,
         order:    question.order ?? index,
         required: question.required ?? false,
         options,
+        ...(question.validation ? { validation: question.validation } : {}),
+        ...(question.category ? { category: question.category as QuestionCategory } : {}),
       };
     });
   }
@@ -811,6 +1021,9 @@ Return raw JSON array only.
       label,
       type,
       options: this.normalizeGeneratedQuestionOptions(record, type, index),
+      ...(typeof record.category === 'string' && record.category.trim()
+        ? { category: record.category.trim() }
+        : {}),
     };
   }
 
@@ -929,25 +1142,26 @@ Return raw JSON array only.
   }
 
   private async listNurseResponses(
-    authUser: { sub?: string; userId?: string },
+    authUser: AuthUserPayload,
     validated?: boolean,
   ): Promise<NurseVisibleResponseItem[]> {
-    const nurse = await this.getNurseUser(authUser);
-    const nurseDepartment = this.normalizeDepartment(nurse.assignedDepartment);
-    const patients = await this.userModel
-      .find({
-        assignedDepartment: {
-          $regex: `^${this.escapeRegex(nurse.assignedDepartment ?? '')}$`,
-          $options: 'i',
-        },
-      })
-      .select('_id firstName lastName email assignedDepartment')
-      .exec();
+    const nurse = await this.getScopedStaffUser(authUser, ['nurse']);
+    return this.listVisibleResponsesByDepartment(nurse.department, validated);
+  }
 
-    const visiblePatients = patients.filter(
-      (patient) => this.normalizeDepartment(patient.assignedDepartment) === nurseDepartment,
-    );
+  private async listCoordinatorResponses(
+    authUser: AuthUserPayload,
+    validated?: boolean,
+  ): Promise<NurseVisibleResponseItem[]> {
+    const coordinator = await this.getScopedStaffUser(authUser, ['coordinator']);
+    return this.listVisibleResponsesByDepartment(coordinator.department, validated);
+  }
 
+  private async listVisibleResponsesByDepartment(
+    department: string | null,
+    validated?: boolean,
+  ): Promise<NurseVisibleResponseItem[]> {
+    const visiblePatients = await this.getPatientsForDepartment(department);
     const patientIds = visiblePatients.map((patient) => patient._id.toString());
     if (patientIds.length === 0) {
       return [];
@@ -981,28 +1195,41 @@ Return raw JSON array only.
       .filter((item): item is NurseVisibleResponseItem => item !== null);
   }
 
-  private async getNurseUser(authUser: { sub?: string; userId?: string }): Promise<UserDocument> {
+  private async getScopedStaffUser(
+    authUser: AuthUserPayload,
+    allowedRoles: string[],
+  ): Promise<ScopedStaffUser> {
     const authUserId = this.extractAuthUserId(authUser);
 
     if (!authUserId || !isValidObjectId(authUserId)) {
       throw new ForbiddenException('Invalid authenticated user');
     }
 
-    const nurse = await this.userModel.findById(authUserId).exec();
-    if (!nurse) {
-      throw new NotFoundException('Authenticated nurse not found');
+    const staffUser = await this.userModel.findById(authUserId).exec();
+    if (!staffUser) {
+      throw new NotFoundException('Authenticated user not found');
     }
 
-    if (!nurse.assignedDepartment?.trim()) {
-      throw new ForbiddenException('Nurse department is not configured');
+    const roleName = await this.resolveUserRoleName(staffUser);
+    if (!allowedRoles.includes(roleName)) {
+      throw new ForbiddenException('You are not allowed to access this resource');
     }
 
-    return nurse;
+    const department = staffUser.assignedDepartment?.trim() ?? null;
+    if (!department) {
+      throw new ForbiddenException('Assigned department is not configured');
+    }
+
+    return {
+      user: staffUser,
+      roleName,
+      department,
+    };
   }
 
-  private async findVisibleResponseForNurse(
+  private async findVisibleResponse(
     responseId: string,
-    department: string,
+    department: string | null,
   ): Promise<SymptomResponseDocument> {
     if (!responseId || !isValidObjectId(responseId)) {
       throw new BadRequestException('Invalid symptom response id');
@@ -1024,7 +1251,7 @@ Return raw JSON array only.
 
   private async getPatientForVisibleResponse(
     response: SymptomResponseDocument,
-    department: string,
+    department: string | null,
   ): Promise<UserDocument> {
     const patientId = response.patientId?.trim();
 
@@ -1032,6 +1259,13 @@ Return raw JSON array only.
       throw new ForbiddenException('Response has no valid patient reference');
     }
 
+    return this.getPatientById(patientId, department);
+  }
+
+  private async getPatientById(
+    patientId: string,
+    department: string | null,
+  ): Promise<UserDocument> {
     const patient = await this.userModel
       .findById(patientId)
       .select('_id firstName lastName email assignedDepartment')
@@ -1041,11 +1275,35 @@ Return raw JSON array only.
       throw new NotFoundException(`Patient ${patientId} not found`);
     }
 
-    if (this.normalizeDepartment(patient.assignedDepartment) !== this.normalizeDepartment(department)) {
+    if (
+      department &&
+      this.normalizeDepartment(patient.assignedDepartment) !== this.normalizeDepartment(department)
+    ) {
       throw new ForbiddenException('You cannot access responses outside your department');
     }
 
     return patient;
+  }
+
+  private async getPatientsForDepartment(department: string | null): Promise<UserDocument[]> {
+    if (!department) {
+      return [];
+    }
+
+    const patients = await this.userModel
+      .find({
+        assignedDepartment: {
+          $regex: `^${this.escapeRegex(department)}$`,
+          $options: 'i',
+        },
+      })
+      .select('_id firstName lastName email assignedDepartment')
+      .exec();
+
+    return patients.filter(
+      (patient) =>
+        this.normalizeDepartment(patient.assignedDepartment) === this.normalizeDepartment(department),
+    );
   }
 
   private formatNurseResponse(
@@ -1085,6 +1343,7 @@ Return raw JSON array only.
       validated: response.validated ?? false,
       validatedBy: response.validatedBy ?? null,
       validatedByName: response.validatedByName ?? null,
+      validatedByRole: response.validatedByRole ?? null,
       validatedAt: response.validatedAt ?? null,
       validationNote: response.validationNote ?? '',
       issueReported: response.issueReported ?? false,
@@ -1100,6 +1359,26 @@ Return raw JSON array only.
 
   private extractAuthUserId(authUser: { sub?: string; userId?: string } | null | undefined): string {
     return authUser?.sub ?? authUser?.userId ?? '';
+  }
+
+  private async resolveUserRoleName(user: UserDocument): Promise<string> {
+    const roleValue = user.role as unknown;
+
+    if (roleValue && typeof roleValue === 'object' && 'name' in roleValue) {
+      const roleName = roleValue.name;
+      return typeof roleName === 'string' ? roleName.trim().toLowerCase() : '';
+    }
+
+    if (typeof roleValue === 'string') {
+      if (!isValidObjectId(roleValue)) {
+        return roleValue.trim().toLowerCase();
+      }
+
+      const role = await this.roleModel.findById(roleValue).select('name').lean().exec();
+      return role?.name?.trim().toLowerCase() ?? '';
+    }
+
+    return '';
   }
 
   private normalizeDepartment(department: string | null | undefined): string {

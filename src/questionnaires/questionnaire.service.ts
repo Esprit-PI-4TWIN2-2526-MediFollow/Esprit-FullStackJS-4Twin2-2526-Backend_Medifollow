@@ -8,6 +8,10 @@ import { CreateQuestionnaireDto } from './dto/create-questionnaire.dto';
 import { UpdateQuestionnaireDto } from './dto/update-questionnaire.dto';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { SubmitResponseDto } from './dto/submit-response.dto';
+import { Alert } from 'src/alert/schemas/alert.schema';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
+import { AlertsService } from 'src/alert/alerts.service';
 
 @Injectable()
 export class QuestionnaireService {
@@ -18,6 +22,9 @@ export class QuestionnaireService {
 
     @InjectModel(QuestionnaireResponse.name)
     private responseModel: Model<QuestionnaireResponseDocument>,
+   
+
+    
   ) {}
 
   // ── Questionnaires ──────────────────────────────────────
@@ -124,7 +131,8 @@ export class QuestionnaireService {
   async submitResponse(
     questionnaireId: string,
     patientId: string,
-    dto: SubmitResponseDto
+    dto: SubmitResponseDto,
+    
   ): Promise<QuestionnaireResponse> {
     const q = await this.questionnaireModel.findById(questionnaireId).exec();
     if (!q) throw new NotFoundException(`Questionnaire ${questionnaireId} introuvable`);
@@ -142,9 +150,12 @@ export class QuestionnaireService {
       { $inc: { responsesCount: 1 } }
     ).exec();
 
+  
     return response.save();
   }
 
+
+  
   async getResponses(questionnaireId: string): Promise<QuestionnaireResponse[]> {
     return this.responseModel
       .find({ questionnaireId: new Types.ObjectId(questionnaireId) })

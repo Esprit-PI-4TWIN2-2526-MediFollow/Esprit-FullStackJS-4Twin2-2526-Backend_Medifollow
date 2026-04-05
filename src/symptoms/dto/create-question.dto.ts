@@ -47,4 +47,8 @@ export class CreateQuestionDto {
   @ValidateNested()
   @Type(() => ValidationDto)
   validation?: ValidationDto;
+
+  @IsEnum(['vital_parameters', 'subjective_symptoms', 'patient_context', 'clinical_data'])
+  @IsOptional()
+  category?: string;
 }
