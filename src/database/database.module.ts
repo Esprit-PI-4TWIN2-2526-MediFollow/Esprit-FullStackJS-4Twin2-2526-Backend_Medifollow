@@ -1,6 +1,6 @@
 // src/database/database.module.ts
 import { Module, Global, Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as mongoose from 'mongoose';
@@ -25,32 +25,27 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         await this.tryAtlas();
     }
 
- async tryAtlas(): Promise<boolean> {
-    try {
-        if (this.atlasConn) {
-            try { await this.atlasConn.close(); } catch { }
+    async tryAtlas(): Promise<boolean> {
+        try {
+            if (this.atlasConn) {
+                try { await this.atlasConn.close(); } catch { }
+                this.atlasConn = null;
+            }
+            this.atlasConn = await mongoose
+                .createConnection(this.config.get<string>('MONGODB_URI')!, {
+                    serverSelectionTimeoutMS: 5000,
+                    connectTimeoutMS: 5000,
+                }).asPromise();
+            this._atlasActive = true;
+            this.logger.log('Atlas connecté');
+            return true;
+        } catch {
             this.atlasConn = null;
+            this._atlasActive = false;
+            this.logger.warn('Atlas down — mode local actif');
+            return false;
         }
-        this.atlasConn = await mongoose
-            .createConnection(this.config.get<string>('MONGODB_URI')!, {
-                serverSelectionTimeoutMS: 5000,
-                connectTimeoutMS: 5000,
-            }).asPromise();
-        
-        if (!this._atlasActive) { 
-            this.logger.log(' Atlas connecté');
-        }
-        this._atlasActive = true;
-        return true;
-    } catch {
-        this.atlasConn = null;
-        if (this._atlasActive) { 
-            this.logger.warn(' Atlas down — mode local actif');
-        }
-        this._atlasActive = false;
-        return false;
     }
-}
 
     get active() { return this._atlasActive ? this.atlasConn! : this.localConn!; }
     get isAtlasActive() { return this._atlasActive; }
@@ -109,6 +104,7 @@ export class SyncService {
         this.logger.log(`Sync terminée. Restant: ${this.queue.size()}`);
     }
 }
+
 // ── 4. AtlasSyncService ─────────────────────────────
 @Injectable()
 export class AtlasSyncService implements OnModuleInit {
@@ -132,6 +128,8 @@ export class AtlasSyncService implements OnModuleInit {
     async handleCronAtlasToLocal() {
         if (this.db.isAtlasActive) {
             await this.syncAtlasToLocal();
+        } else {
+            this.logger.warn('Atlas down — sync Atlas→Local suspendue');
         }
     }
 
@@ -143,8 +141,10 @@ export class AtlasSyncService implements OnModuleInit {
     }
 
     async syncLocalToAtlas() {
+        this.logger.log('Sync Local → Atlas...');
         let localConn: mongoose.Connection | null = null;
         let atlasConn: mongoose.Connection | null = null;
+
         try {
             localConn = await mongoose
                 .createConnection('mongodb://localhost:27017/medifollow', {
@@ -166,10 +166,11 @@ export class AtlasSyncService implements OnModuleInit {
                             { upsert: true }
                         );
                     }
+                    this.logger.log(`Local → Atlas: ${name} (${docs.length} docs)`);
                 } catch { continue; }
             }
         } catch (e) {
-            this.logger.error('❌ Erreur sync Local → Atlas', e);
+            this.logger.error('Erreur sync Local → Atlas', e);
         } finally {
             await localConn?.close();
             await atlasConn?.close();
@@ -178,8 +179,10 @@ export class AtlasSyncService implements OnModuleInit {
 
     async syncAtlasToLocal() {
         if (!this.db.isAtlasActive) return;
+        this.logger.log('Sync Atlas → Local...');
         let atlasConn: mongoose.Connection | null = null;
         let localConn: mongoose.Connection | null = null;
+
         try {
             atlasConn = await mongoose
                 .createConnection(this.config.get<string>('MONGODB_URI')!, {
@@ -201,10 +204,11 @@ export class AtlasSyncService implements OnModuleInit {
                             { upsert: true }
                         );
                     }
+                    this.logger.log(`Atlas → Local: ${name} (${docs.length} docs)`);
                 } catch { continue; }
             }
         } catch (e) {
-            this.logger.error('❌ Erreur sync Atlas → Local', e);
+            this.logger.error('Erreur sync Atlas → Local', e);
         } finally {
             await atlasConn?.close();
             await localConn?.close();
@@ -215,7 +219,7 @@ export class AtlasSyncService implements OnModuleInit {
 // ── 5. HealthCheckService ───────────────────────────
 @Injectable()
 export class HealthCheckService implements OnModuleInit {
-    private readonly logger = new Logger('HealthCheckService');
+        private readonly logger = new Logger('HealthCheckService'); // ← ajouter
 
     constructor(
         private db: DatabaseService,
@@ -225,12 +229,12 @@ export class HealthCheckService implements OnModuleInit {
     ) { }
 
     onModuleInit() {
-        const ms = +(this.config.get<string>('MONGO_HEALTH_INTERVAL_MS') || 10000);
+        const ms = +(this.config.get<string>('MONGO_HEALTH_INTERVAL_MS') || 10000); // ← 10s par défaut
         setInterval(async () => {
             const was = this.db.isAtlasActive;
             const now = await this.db.tryAtlas();
             if (!was && now) {
-                this.logger.log('✅ Atlas revenu — sync en cours...');
+                this.logger.log('Atlas revenu — démarrage sync...');
                 await this.sync.flush();
                 await this.atlasSync.syncLocalToAtlas();
             }
@@ -243,8 +247,7 @@ export class HealthCheckService implements OnModuleInit {
 @Module({
     imports: [
         MongooseModule.forRootAsync({
-            imports: [ConfigModule], 
-
+            
             useFactory: (config: ConfigService) => ({
                 uri: config.get<string>('MONGO_LOCAL_URI')!,
                 dbName: 'medifollow',
