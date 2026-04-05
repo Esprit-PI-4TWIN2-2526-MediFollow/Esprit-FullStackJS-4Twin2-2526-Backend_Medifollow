@@ -1,3 +1,4 @@
+import { CommunicationModule } from './communication/communication.module';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -34,6 +35,7 @@ import { SymptomsModule } from './symptoms/symptoms.module';
 
       }),
       inject: [ConfigService],
+      
     }),
     UsersModule,
     AuthModule,
@@ -47,6 +49,7 @@ import { SymptomsModule } from './symptoms/symptoms.module';
     ServiceModule,
     DashboardModule,
     SymptomsModule,
+    CommunicationModule
   ],
   controllers: [AppController],
   providers: [AppService],

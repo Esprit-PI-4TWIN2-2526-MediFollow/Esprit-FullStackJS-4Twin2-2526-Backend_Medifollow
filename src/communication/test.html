@@ -1,0 +1,28 @@
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+<script>
+  const socket = io("http://localhost:3000");
+
+  socket.emit("register", "1");
+
+  socket.emit("sendMessage", {
+    senderId: "1",
+    receiverId: "2",
+    roleSender: "patient",
+    roleReceiver: "physician",
+    type: "message",
+    content: "Bonjour"
+  });
+
+  socket.on("newMessage", (msg) => {
+    console.log("Message reçu:", msg);
+  });
+
+  socket.on("criticalAlert", (msg) => {
+    console.log("ALERT:", msg);
+  });
+
+  socket.on("reminder", (msg) => {
+    console.log("REMINDER:", msg);
+  });
+</script>
