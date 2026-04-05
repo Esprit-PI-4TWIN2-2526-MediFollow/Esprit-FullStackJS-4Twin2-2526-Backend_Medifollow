@@ -12,6 +12,12 @@ export type QuestionType =
   | 'date'
   | 'boolean';
 
+export type QuestionCategory =
+  | 'vital_parameters'
+  | 'subjective_symptoms'
+  | 'patient_context'
+  | 'clinical_data';
+
 @Schema({ _id: true })
 export class Question {
   _id?: Types.ObjectId;
@@ -33,6 +39,13 @@ export class Question {
 
   @Prop({ type: [String], required: false, default: [] })
   options: string[];
+
+  @Prop({
+    required: false,
+    enum: ['vital_parameters', 'subjective_symptoms', 'patient_context', 'clinical_data'],
+    default: null,
+  })
+  category?: QuestionCategory;
 
   @Prop({ type: Object, required: false })
   validation?: {

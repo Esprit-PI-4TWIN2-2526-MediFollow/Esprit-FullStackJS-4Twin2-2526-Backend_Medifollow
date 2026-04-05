@@ -16,7 +16,7 @@ import { SubmitResponseDto } from './dto/submit-response.dto';
 import { GenerateSymptomDto } from './dto/generate-symptom.dto';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateSymptomDto } from './dto/update-symptom.dto';
-import { Question, QuestionType } from './schemas/question.schema';
+import { Question, QuestionCategory, QuestionType } from './schemas/question.schema';
 import { ResponseActionDto } from './dto/response-action.dto';
 import { User, UserDocument } from 'src/users/users.schema';
 import { Role, RoleDocument } from 'src/role/schemas/role.schema';
@@ -110,6 +110,7 @@ type FrontendGeneratedQuestion = {
   label: string;
   type: FrontendQuestionType;
   options: string[];
+  category?: string;
 };
 
 const FRONTEND_QUESTION_TYPES: FrontendQuestionType[] = [
@@ -513,7 +514,10 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
   const questionMap = new Map(
     symptomForm.questions.map((q: any) => [
       q._id?.toString(),
-      q.label || ''
+      {
+        label: q.label || '',
+        category: q.category || null,
+      },
     ])
   );
   const vitalsForAlert = this.extractVitalsForAlert(normalizedAnswers, questionMap);
@@ -550,7 +554,7 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
    */
   private extractVitalsForAlert(
   answers: Array<{ questionId: string; value: any }>,
-  questionMap: Map<string, string>  
+  questionMap: Map<string, { label: string; category?: string | null }>  
 ) {
   const vitals: any = {
     heartRate: null,
@@ -561,19 +565,33 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
   };
 
   answers.forEach((ans) => {
-    // Récupérer le label via questionMap
-    const label = (questionMap.get(ans.questionId) || '').toLowerCase();
+    const question = questionMap.get(ans.questionId);
+    const label = (question?.label || '').toLowerCase();
 
-    if (label.includes('heart rate') || label.includes('rythme cardiaque') || label.includes('pulse')) {
+    if (question?.category === 'vital_parameters') {
+      if (label.includes('heart rate') || label.includes('rythme cardiaque') || label.includes('pulse')) {
+        vitals.heartRate = parseFloat(ans.value);
+      }
+      if (label.includes('spo2') || label.includes('oxygen') || label.includes('saturation')) {
+        vitals.spo2 = parseFloat(ans.value);
+      }
+      if (label.includes('température') || label.includes('temperature') || label.includes('°c')) {
+        vitals.temperature = parseFloat(ans.value);
+      }
+      if (label.includes('blood pressure') || label.includes('tension')) {
+        if (typeof ans.value === 'string' && ans.value.includes('/')) {
+          const [sys, dia] = ans.value.split('/');
+          vitals.systolicBP = parseFloat(sys);
+          vitals.diastolicBP = parseFloat(dia);
+        }
+      }
+    } else if (label.includes('heart rate') || label.includes('rythme cardiaque') || label.includes('pulse')) {
       vitals.heartRate = parseFloat(ans.value);
-    }
-    if (label.includes('spo2') || label.includes('oxygen') || label.includes('saturation')) {
+    } else if (label.includes('spo2') || label.includes('oxygen') || label.includes('saturation')) {
       vitals.spo2 = parseFloat(ans.value);
-    }
-    if (label.includes('température') || label.includes('temperature') || label.includes('°c')) {
+    } else if (label.includes('température') || label.includes('temperature') || label.includes('°c')) {
       vitals.temperature = parseFloat(ans.value);
-    }
-    if (label.includes('blood pressure') || label.includes('tension')) {
+    } else if (label.includes('blood pressure') || label.includes('tension')) {
       if (typeof ans.value === 'string' && ans.value.includes('/')) {
         const [sys, dia] = ans.value.split('/');
         vitals.systolicBP = parseFloat(sys);
@@ -803,6 +821,7 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
     const title             = dto.title?.trim();
     const description       = dto.description?.trim() ?? '';
     const medicalService    = dto.medicalService?.trim() ?? '';
+    const category          = dto.category?.trim();
     const numberOfQuestions = dto.numberOfQuestions ?? 7;
 
     if (!title) throw new BadRequestException('title is required');
@@ -829,8 +848,15 @@ Each element must strictly follow this structure:
 {
   "label":    "<question text in plain language>",
   "type":     "<one of: text | number | rating | yes/no | single choice | multiple choice | select | date>",
-  "options":  ["<option 1>", "<option 2>", ...]   ← always present, empty [] when not applicable
+  "options":  ["<option 1>", "<option 2>", ...],  ← always present, empty [] when not applicable
+  "category": "<one of: vital_parameters | subjective_symptoms | patient_context | clinical_data>"
 }
+
+IMPORTANT: Each generated question MUST include a "category" field with one of these exact values:
+- "vital_parameters" for vital signs (temperature, heart rate, blood pressure, SpO2, weight, respiratory rate)
+- "subjective_symptoms" for subjective symptoms (pain, fatigue, nausea, shortness of breath, etc.)
+- "patient_context" for contextual patient data (history, ongoing treatments, patient profile)
+- "clinical_data" for advanced clinical data (glycemia, CRP, diuresis, hydration)
 
 === TYPE SELECTION RULES ===
 • "number"          → measurable numeric vitals: temperature (°C), heart rate (bpm),
@@ -865,6 +891,8 @@ Each element must strictly follow this structure:
 
 === SERVICE-SPECIFIC CLINICAL FOCUS ===
 ${clinicalHints}
+
+${category ? `Generate ONLY questions from the "${category}" category.` : ''}
 `.trim();
 
     // ── User prompt ───────────────────────────────────────────────────────────
@@ -939,12 +967,13 @@ Return raw JSON array only.
         : [];
 
       return {
-        ...question,
         label:    question.label.trim(),
         type:     question.type.trim() as QuestionType,
         order:    question.order ?? index,
         required: question.required ?? false,
         options,
+        ...(question.validation ? { validation: question.validation } : {}),
+        ...(question.category ? { category: question.category as QuestionCategory } : {}),
       };
     });
   }
@@ -992,6 +1021,9 @@ Return raw JSON array only.
       label,
       type,
       options: this.normalizeGeneratedQuestionOptions(record, type, index),
+      ...(typeof record.category === 'string' && record.category.trim()
+        ? { category: record.category.trim() }
+        : {}),
     };
   }
 
