@@ -51,7 +51,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      (client as any).currentUser = {        // ← (as any) partout
+      (client as any).currentUser = {        
         userId: String(user._id),
         email: user.email,
         firstName: user.firstName,
