@@ -1,4 +1,3 @@
-import { CommunicationModule } from './communication/communication.module';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -22,6 +21,7 @@ import { VoiceCallsModule } from './voice-calls/voice-calls.module';
 import { AlertModule } from './alert/alert.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DatabaseModule } from './database/database.module';
+import { ChatModule } from './communication/chat.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -52,10 +52,10 @@ import { DatabaseModule } from './database/database.module';
     ServiceModule,
     DashboardModule,
     SymptomsModule,
-    CommunicationModule,
     CoordinatorModule,
     VoiceCallsModule,
     AlertModule,
+    ChatModule
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,33 +1,24 @@
+// src/chat/schemas/message.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
-import { MessageType, UserRole } from '../enums/message.enum';
+import { HydratedDocument, Types } from 'mongoose';
+import { User } from 'src/users/users.schema';
 
-@Schema({ timestamps: true })
-export class Message extends Document {
+export type MessageDocument = HydratedDocument<Message>;
+
+@Schema({ timestamps: true, collection: 'messages' })
+export class Message {
+
+  @Prop({ type: Types.ObjectId, ref: User.name, required: true })
+  sender: Types.ObjectId; 
 
   @Prop({ required: true })
-  senderId: string;
+  senderRoleName: string; 
 
   @Prop({ required: true })
-  receiverId: string;
-
-  @Prop({ enum: UserRole, required: true })
-  roleSender: UserRole;
-
-  @Prop({ enum: UserRole, required: true })
-  roleReceiver: UserRole;
-
-  @Prop({ enum: MessageType, required: true })
-  type: MessageType;
+  roomId: string;
 
   @Prop({ required: true })
   content: string;
-
-  @Prop({ default: false })
-  isUrgent: boolean;
-
-  @Prop()
-  scheduledAt?: Date;
 
   @Prop({ default: false })
   read: boolean;

@@ -219,7 +219,7 @@ export class AtlasSyncService implements OnModuleInit {
 // ── 5. HealthCheckService ───────────────────────────
 @Injectable()
 export class HealthCheckService implements OnModuleInit {
-        private readonly logger = new Logger('HealthCheckService'); // ← ajouter
+        private readonly logger = new Logger('HealthCheckService'); 
 
     constructor(
         private db: DatabaseService,
@@ -229,7 +229,7 @@ export class HealthCheckService implements OnModuleInit {
     ) { }
 
     onModuleInit() {
-        const ms = +(this.config.get<string>('MONGO_HEALTH_INTERVAL_MS') || 10000); // ← 10s par défaut
+        const ms = +(this.config.get<string>('MONGO_HEALTH_INTERVAL_MS') || 10000); 
         setInterval(async () => {
             const was = this.db.isAtlasActive;
             const now = await this.db.tryAtlas();
