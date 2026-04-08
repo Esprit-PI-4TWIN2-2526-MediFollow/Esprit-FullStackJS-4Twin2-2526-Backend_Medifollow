@@ -109,11 +109,24 @@ export class SyncService {
 @Injectable()
 export class AtlasSyncService implements OnModuleInit {
     private readonly logger = new Logger('AtlasSyncService');
-    private readonly collections = [
-        'users', 'roles', 'symptoms', 'questionnaires',
-        'alerts', 'services', 'communications', 'coordinators',
-        'symptomresponses', 'voicecalls', 'dashboards'
-    ];
+   private readonly collections = [
+    'users',
+    'roles',
+    'symptoms',
+    'questionnaires',
+    'alerts',
+    'services',
+    'symptomresponses',
+    'authenticators',
+    'consultations',
+    'medicaldocuments',
+    'messages',
+    'prescriptions',
+    'questionnaireresponses',
+    'videosessions',
+    'voicecallsessions',
+    'local'
+];
 
     constructor(
         private db: DatabaseService,
