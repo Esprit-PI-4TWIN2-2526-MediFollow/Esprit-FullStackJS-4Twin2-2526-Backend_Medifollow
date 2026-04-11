@@ -20,6 +20,7 @@ import { SymptomsModule } from './symptoms/symptoms.module';
 import { CoordinatorModule } from './coordinator/coordinator.module';
 import { VoiceCallsModule } from './voice-calls/voice-calls.module';
 import { AlertModule } from './alert/alert.module';
+import { TelemedicineModule } from './telemedicine/telemedicine.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -51,6 +52,7 @@ import { AlertModule } from './alert/alert.module';
     CoordinatorModule,
     VoiceCallsModule,
     AlertModule,
+    TelemedicineModule,
   ],
   controllers: [AppController],
   providers: [AppService],

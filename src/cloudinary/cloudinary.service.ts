@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+
 @Injectable()
 export class CloudinaryService {
-    constructor() {
+  constructor() {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
@@ -11,31 +12,47 @@ export class CloudinaryService {
     });
   }
 
-
-async uploadImage(file: Express.Multer.File): Promise<string> {
+  async uploadImage(file: Express.Multer.File): Promise<string> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'avatars', // dossier dans Cloudinary
-          transformation: [{ width: 300, height: 300, crop: 'fill' }], // redimensionner
+          folder: 'avatars',
+          transformation: [{ width: 300, height: 300, crop: 'fill' }],
         },
         (error, result) => {
-         if (error) return reject(error);
-        if (!result) return reject(new Error('Upload failed'));
-        resolve(result.secure_url); // URL publique permanente
+          if (error) return reject(error);
+          if (!result) return reject(new Error('Upload failed'));
+          resolve(result.secure_url);
         },
       );
 
-      // Convertir le buffer en stream
       Readable.from(file.buffer).pipe(uploadStream);
     });
   }
 
-async deleteImage(publicId: string): Promise<void> {
+  async uploadFile(file: Express.Multer.File): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'medical-documents',
+          resource_type: 'auto',
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          if (!result) return reject(new Error('Upload failed'));
+          resolve(result);
+        },
+      );
+
+      Readable.from(file.buffer).pipe(uploadStream);
+    });
+  }
+
+  async deleteImage(publicId: string): Promise<void> {
     await cloudinary.uploader.destroy(publicId);
   }
 
-
-
-
+  async deleteFile(publicId: string): Promise<void> {
+    await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
+  }
 }
