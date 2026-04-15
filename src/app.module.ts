@@ -21,7 +21,7 @@ import { VoiceCallsModule } from './voice-calls/voice-calls.module';
 import { AlertModule } from './alert/alert.module';
 import { AiAnalysisModule } from './ai-analysis/ai-analysis.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { DatabaseModule } from './database/database.module';
+// import { DatabaseModule } from './database/database.module';
 import { ChatModule } from './communication/chat.module';
 @Module({
   imports: [
