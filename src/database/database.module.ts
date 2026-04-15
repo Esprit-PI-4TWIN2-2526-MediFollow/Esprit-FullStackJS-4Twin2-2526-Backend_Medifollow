@@ -1,12 +1,23 @@
 // src/database/database.module.ts
-import { Module, Global, Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+    Module, Global, Injectable,
+    OnModuleInit, OnModuleDestroy, Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as mongoose from 'mongoose';
 import * as fs from 'fs';
 
-// ── 1. DatabaseService ──────────────────────────────
+// ── Types ────────────────────────────────────────────
+interface SyncOp {
+    id: string;
+    collection: string;
+    operation: string;
+    args: any[];
+}
+
+// ── 1. DatabaseService ───────────────────────────────
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger('DatabaseService');
@@ -14,41 +25,52 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     private localConn: mongoose.Connection | null = null;
     private _atlasActive = false;
 
-    constructor(private config: ConfigService) { }
+    constructor(private config: ConfigService) {}
 
     async onModuleInit() {
         this.localConn = await mongoose
             .createConnection(this.config.get<string>('MONGO_LOCAL_URI')!, {
                 serverSelectionTimeoutMS: 5000,
-            }).asPromise();
-        this.logger.log('Local connecté');
+            })
+            .asPromise();
+        this.logger.log('Local connected');
         await this.tryAtlas();
     }
 
-    async tryAtlas(): Promise<boolean> {
-        try {
-            if (this.atlasConn) {
-                try { await this.atlasConn.close(); } catch { }
-                this.atlasConn = null;
+   async tryAtlas(): Promise<boolean> {
+    try {
+        const newConn = await mongoose.createConnection(
+            this.config.get<string>('MONGODB_URI')!, {
+                serverSelectionTimeoutMS: 5000,
+                connectTimeoutMS: 5000,
             }
-            this.atlasConn = await mongoose
-                .createConnection(this.config.get<string>('MONGODB_URI')!, {
-                    serverSelectionTimeoutMS: 5000,
-                    connectTimeoutMS: 5000,
-                }).asPromise();
-            this._atlasActive = true;
-            this.logger.log('Atlas connecté');
-            return true;
-        } catch {
-            this.atlasConn = null;
-            this._atlasActive = false;
-            this.logger.warn('Atlas down — mode local actif');
-            return false;
-        }
+        ).asPromise();
+
+        // Swap atomique : nouvelle connexion active AVANT de fermer l'ancienne
+        const old = this.atlasConn;
+        this.atlasConn = newConn;
+        this._atlasActive = true;
+        if (old) old.close().catch(() => {});
+        
+        this.logger.log('Atlas connected');
+        return true;
+    } catch {
+        this._atlasActive = false;
+        this.logger.warn('Atlas unreachable — local mode active');
+        return false;
+    }
+}
+
+
+    // Expose les connexions directement (réutilisées, pas recréées)
+    get atlasConnection(): mongoose.Connection | null { return this.atlasConn; }
+    get localConnection(): mongoose.Connection | null { return this.localConn; }
+
+    get active(): mongoose.Connection {
+        return this._atlasActive ? this.atlasConn! : this.localConn!;
     }
 
-    get active() { return this._atlasActive ? this.atlasConn! : this.localConn!; }
-    get isAtlasActive() { return this._atlasActive; }
+    get isAtlasActive(): boolean { return this._atlasActive; }
 
     async onModuleDestroy() {
         await this.atlasConn?.close();
@@ -56,185 +78,271 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     }
 }
 
-// ── 2. SyncQueueService ─────────────────────────────
+// ── 2. SyncQueueService ──────────────────────────────
 @Injectable()
 export class SyncQueueService implements OnModuleInit {
-    private queue: any[] = [];
+    private queue: SyncOp[] = [];
     private filePath!: string;
 
-    constructor(private config: ConfigService) { }
+    constructor(private config: ConfigService) {}
 
     onModuleInit() {
         this.filePath = this.config.get<string>('SYNC_QUEUE_PATH') || './sync-queue.json';
         try {
             if (fs.existsSync(this.filePath))
                 this.queue = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
-        } catch { this.queue = []; }
+        } catch {
+            this.queue = [];
+        }
     }
 
-    push(op: { collection: string; operation: string; args: any[] }) {
-        this.queue.push({ ...op, id: Date.now() + '-' + Math.random().toString(36).slice(2) });
-        fs.writeFileSync(this.filePath, JSON.stringify(this.queue, null, 2));
+    push(op: Omit<SyncOp, 'id'>) {
+        this.queue.push({
+            ...op,
+            id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        });
+        this.persist();
     }
 
-    getAll() { return [...this.queue]; }
-    size() { return this.queue.length; }
+    getAll(): SyncOp[] { return [...this.queue]; }
+    size(): number { return this.queue.length; }
+
     remove(id: string) {
         this.queue = this.queue.filter(o => o.id !== id);
+        this.persist();
+    }
+
+    private persist() {
         fs.writeFileSync(this.filePath, JSON.stringify(this.queue, null, 2));
     }
 }
 
-// ── 3. SyncService ──────────────────────────────────
+// ── 3. SyncService ───────────────────────────────────
 @Injectable()
 export class SyncService {
     private readonly logger = new Logger('SyncService');
 
-    constructor(private db: DatabaseService, private queue: SyncQueueService) { }
+    constructor(private db: DatabaseService, private queue: SyncQueueService) {}
 
     async flush() {
         if (!this.queue.size()) return;
-        this.logger.log(`Sync: ${this.queue.size()} op(s)`);
+        this.logger.log(`Flushing ${this.queue.size()} queued op(s)…`);
         for (const op of this.queue.getAll()) {
             try {
                 await (this.db.active.collection(op.collection) as any)[op.operation](...op.args);
                 this.queue.remove(op.id);
-            } catch { break; }
+            } catch (err) {
+                this.logger.error(`Queue op failed (${op.operation} on ${op.collection})`, err);
+                break; // stop on first failure — order matters
+            }
         }
-        this.logger.log(`Sync terminée. Restant: ${this.queue.size()}`);
+        this.logger.log(`Flush done. Remaining: ${this.queue.size()}`);
     }
 }
 
-// ── 4. AtlasSyncService ─────────────────────────────
+// ── 4. AtlasSyncService ──────────────────────────────
+//
+// FIX — suppressions propagées via une collection _deleted (tombstones)
+// FIX — mutex isSyncing pour éviter les crons parallèles
+// FIX — connexions réutilisées (DatabaseService) au lieu d'être recréées
+// FIX — logs réduits (résumé par collection, pas par document)
+//
 @Injectable()
 export class AtlasSyncService implements OnModuleInit {
     private readonly logger = new Logger('AtlasSyncService');
+    private isSyncing = false;
+
     private readonly collections = [
         'users', 'roles', 'symptoms', 'questionnaires',
         'alerts', 'services', 'communications', 'coordinators',
-        'symptomresponses', 'voicecalls', 'dashboards'
+        'symptomresponses', 'voicecalls', 'dashboards',
     ];
 
     constructor(
         private db: DatabaseService,
         private config: ConfigService,
-    ) { }
+    ) {}
 
     async onModuleInit() {
         setTimeout(() => this.syncAtlasToLocal(), 3000);
     }
 
+    // ── Atlas → Local (every 30s) ──────────────────────
     @Cron(CronExpression.EVERY_30_SECONDS)
     async handleCronAtlasToLocal() {
-        if (this.db.isAtlasActive) {
-            await this.syncAtlasToLocal();
-        } else {
-            this.logger.warn('Atlas down — sync Atlas→Local suspendue');
+        if (!this.db.isAtlasActive) {
+            this.logger.warn('Atlas down — Atlas→Local sync suspended');
+            return;
         }
+        await this.syncAtlasToLocal();
     }
 
+    // ── Local → Atlas (every 30s) ──────────────────────
     @Cron(CronExpression.EVERY_30_SECONDS)
     async handleCronLocalToAtlas() {
-        if (this.db.isAtlasActive) {
-            await this.syncLocalToAtlas();
-        }
+        if (!this.db.isAtlasActive) return;
+        await this.syncLocalToAtlas();
     }
 
+    // ── Sync Local → Atlas ─────────────────────────────
     async syncLocalToAtlas() {
-        this.logger.log('Sync Local → Atlas...');
-        let localConn: mongoose.Connection | null = null;
-        let atlasConn: mongoose.Connection | null = null;
+        if (this.isSyncing) return; // mutex
+        this.isSyncing = true;
+        this.logger.log('Sync Local → Atlas started');
+
+        const local = this.db.localConnection;
+        const atlas = this.db.atlasConnection;
+        if (!local || !atlas) {
+            this.isSyncing = false;
+            return;
+        }
 
         try {
-            localConn = await mongoose
-                .createConnection('mongodb://localhost:27017/medifollow', {
-                    dbName: 'medifollow',
-                }).asPromise();
-            atlasConn = await mongoose
-                .createConnection(this.config.get<string>('MONGODB_URI')!, {
-                    dbName: 'db_medifollow',
-                }).asPromise();
+            // 1. Propagate tombstones (deletes) first
+            await this.applyTombstones(local, atlas);
 
+            // 2. Upsert live documents
             for (const name of this.collections) {
                 try {
-                    const docs = await localConn.collection(name).find({}).toArray();
+                    const docs = await local.collection(name)
+                        .find({})
+                        .toArray();
                     if (!docs.length) continue;
-                    for (const doc of docs) {
-                        await atlasConn.collection(name).updateOne(
-                            { _id: doc._id },
-                            { $set: doc },
-                            { upsert: true }
-                        );
-                    }
+
+                    const ops = docs.map(doc => ({
+                        updateOne: {
+                            filter: { _id: doc._id },
+                            update: { $set: doc },
+                            upsert: true,
+                        },
+                    }));
+                    await atlas.collection(name).bulkWrite(ops, { ordered: false });
                     this.logger.log(`Local → Atlas: ${name} (${docs.length} docs)`);
-                } catch { continue; }
+                } catch (err) {
+                    this.logger.error(`Local → Atlas failed for collection ${name}`, err);
+                }
             }
-        } catch (e) {
-            this.logger.error('Erreur sync Local → Atlas', e);
+        } catch (err) {
+            this.logger.error('Local → Atlas sync error', err);
         } finally {
-            await localConn?.close();
-            await atlasConn?.close();
+            this.isSyncing = false;
         }
     }
 
+    // ── Sync Atlas → Local ─────────────────────────────
     async syncAtlasToLocal() {
         if (!this.db.isAtlasActive) return;
-        this.logger.log('Sync Atlas → Local...');
-        let atlasConn: mongoose.Connection | null = null;
-        let localConn: mongoose.Connection | null = null;
+        if (this.isSyncing) return; // mutex
+        this.isSyncing = true;
+        this.logger.log('Sync Atlas → Local started');
+
+        const atlas = this.db.atlasConnection;
+        const local = this.db.localConnection;
+        if (!atlas || !local) {
+            this.isSyncing = false;
+            return;
+        }
 
         try {
-            atlasConn = await mongoose
-                .createConnection(this.config.get<string>('MONGODB_URI')!, {
-                    dbName: 'db_medifollow',
-                }).asPromise();
-            localConn = await mongoose
-                .createConnection('mongodb://localhost:27017/medifollow', {
-                    dbName: 'medifollow',
-                }).asPromise();
+            // 1. Propagate tombstones (deletes) first
+            await this.applyTombstones(atlas, local);
 
+            // 2. Upsert live documents
             for (const name of this.collections) {
                 try {
-                    const docs = await atlasConn.collection(name).find({}).toArray();
+                    const docs = await atlas.collection(name)
+                        .find({})
+                        .toArray();
                     if (!docs.length) continue;
-                    for (const doc of docs) {
-                        await localConn.collection(name).updateOne(
-                            { _id: doc._id },
-                            { $set: doc },
-                            { upsert: true }
-                        );
-                    }
+
+                    const ops = docs.map(doc => ({
+                        updateOne: {
+                            filter: { _id: doc._id },
+                            update: { $set: doc },
+                            upsert: true,
+                        },
+                    }));
+                    await local.collection(name).bulkWrite(ops, { ordered: false });
                     this.logger.log(`Atlas → Local: ${name} (${docs.length} docs)`);
-                } catch { continue; }
+                } catch (err) {
+                    this.logger.error(`Atlas → Local failed for collection ${name}`, err);
+                }
             }
-        } catch (e) {
-            this.logger.error('Erreur sync Atlas → Local', e);
+        } catch (err) {
+            this.logger.error('Atlas → Local sync error', err);
         } finally {
-            await atlasConn?.close();
-            await localConn?.close();
+            this.isSyncing = false;
+        }
+    }
+
+    // ── Tombstone helper ───────────────────────────────
+    //
+    // Appelé avant chaque $set bulk pour s'assurer que les suppressions
+    // sont appliquées AVANT de ré-upsert des documents vivants.
+    //
+    // Usage dans les repositories :
+    //   await db.active.collection('_deleted').insertOne({
+    //     _id: new ObjectId(),
+    //     collection: 'users',
+    //     docId: deletedDoc._id,
+    //     deletedAt: new Date(),
+    //   });
+    //   await db.active.collection('users').deleteOne({ _id: deletedDoc._id });
+    //
+    private async applyTombstones(
+        source: mongoose.Connection,
+        target: mongoose.Connection,
+    ) {
+        try {
+            const tombstones = await source
+                .collection('_deleted')
+                .find({})
+                .toArray();
+
+            if (!tombstones.length) return;
+
+            for (const t of tombstones) {
+                try {
+                    await target.collection(t.collection).deleteOne({ _id: t.docId });
+                } catch {}
+            }
+
+            // Mirror tombstones to the target so it won't re-insert
+            const tombstoneOps = tombstones.map(t => ({
+                updateOne: {
+                    filter: { _id: t._id },
+                    update: { $set: t },
+                    upsert: true,
+                },
+            }));
+            await target.collection('_deleted').bulkWrite(tombstoneOps, { ordered: false });
+
+            this.logger.log(`Tombstones applied: ${tombstones.length} deletion(s)`);
+        } catch (err) {
+            this.logger.error('Tombstone propagation failed', err);
         }
     }
 }
 
-// ── 5. HealthCheckService ───────────────────────────
+// ── 5. HealthCheckService ────────────────────────────
 @Injectable()
 export class HealthCheckService implements OnModuleInit {
-        private readonly logger = new Logger('HealthCheckService'); 
+    private readonly logger = new Logger('HealthCheckService');
 
     constructor(
         private db: DatabaseService,
         private sync: SyncService,
         private atlasSync: AtlasSyncService,
         private config: ConfigService,
-    ) { }
+    ) {}
 
     onModuleInit() {
-        const ms = +(this.config.get<string>('MONGO_HEALTH_INTERVAL_MS') || 10000); 
+        const ms = +(this.config.get<string>('MONGO_HEALTH_INTERVAL_MS') || 10000);
         setInterval(async () => {
             const was = this.db.isAtlasActive;
             const now = await this.db.tryAtlas();
             if (!was && now) {
-                this.logger.log('Atlas revenu — démarrage sync...');
+                this.logger.log('Atlas back online — starting sync…');
                 await this.sync.flush();
                 await this.atlasSync.syncLocalToAtlas();
             }
@@ -242,12 +350,11 @@ export class HealthCheckService implements OnModuleInit {
     }
 }
 
-// ── 6. Module ───────────────────────────────────────
+// ── 6. Module ────────────────────────────────────────
 @Global()
 @Module({
     imports: [
         MongooseModule.forRootAsync({
-            
             useFactory: (config: ConfigService) => ({
                 uri: config.get<string>('MONGO_LOCAL_URI')!,
                 dbName: 'medifollow',
@@ -264,4 +371,4 @@ export class HealthCheckService implements OnModuleInit {
     ],
     exports: [DatabaseService, SyncQueueService, SyncService, MongooseModule],
 })
-export class DatabaseModule { }
+export class DatabaseModule {}
