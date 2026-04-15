@@ -11,8 +11,13 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe());
 
+  // CORS configuration with environment variable
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
   app.enableCors({
-    origin: 'http://localhost:4200',
+    origin: [frontendUrl, 'http://localhost:4200'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   // Limiter nb itérations pour prévenir les attaques par force brute
@@ -26,15 +31,22 @@ async function bootstrap() {
       legacyHeaders: false,
     }),
   );
-  const config = new DocumentBuilder()
-    .setTitle('MediFollow API')
-    .setDescription('Service module')
-    .setVersion('1.0')
-    .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  // Swagger configuration (only in development)
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('MediFollow API')
+      .setDescription('Service module')
+      .setVersion('1.0')
+      .build();
 
-  await app.listen(3000);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document);
+  }
+
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+  console.log(`Application is running on: ${await app.getUrl()}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 }
 bootstrap();
