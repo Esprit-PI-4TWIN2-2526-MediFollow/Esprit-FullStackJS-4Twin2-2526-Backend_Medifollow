@@ -83,7 +83,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 // ─────────────────────────────────────────────
 @Injectable()
 export class SyncQueueService implements OnModuleInit {
-    private queue: any[] = [];
+    private queue: SyncOp[] = [];
     private filePath!: string;
 
     constructor(private config: ConfigService) {}
@@ -119,6 +119,10 @@ export class SyncQueueService implements OnModuleInit {
 
     remove(id: string) {
         this.queue = this.queue.filter(o => o.id !== id);
+        this.persist();
+    }
+
+    private persist() {
         fs.writeFileSync(this.filePath, JSON.stringify(this.queue, null, 2));
     }
 }
@@ -184,6 +188,7 @@ export class AtlasSyncService implements OnModuleInit {
         setTimeout(() => this.syncBothWays(), 3000);
     }
 
+    // ── Atlas → Local (every 30s) ──────────────────────
     @Cron(CronExpression.EVERY_30_SECONDS)
     async handleSync() {
         if (!this.db.isAtlasActive) {
@@ -257,7 +262,6 @@ export class HealthCheckService implements OnModuleInit {
 
     onModuleInit() {
         const ms = +(this.config.get<string>('MONGO_HEALTH_INTERVAL_MS') || 10000);
-
         setInterval(async () => {
             const was = this.db.isAtlasActive;
             const now = await this.db.tryAtlas();

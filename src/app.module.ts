@@ -29,17 +29,17 @@ import { ChatModule } from './communication/chat.module';
       envFilePath: '.env',
     }),
     ScheduleModule.forRoot(),
-    // MongooseModule.forRootAsync({
-    //   imports: [ConfigModule],
-    //   useFactory: (config: ConfigService) => ({
-    //     uri: config.get<string>('MONGODB_URI'),
-    //     dbName: config.get<string>('MONGODB_NAME'),
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (config: ConfigService) => ({
+        uri: config.get<string>('MONGODB_URI'),
+        dbName: config.get<string>('MONGODB_NAME'),
 
-    //   }),
-    //   inject: [ConfigService],
+      }),
+      inject: [ConfigService],
       
-    // }),
-    DatabaseModule,
+    }),
+    //DatabaseModule,
     UsersModule,
     AuthModule,
     EmailModule,
