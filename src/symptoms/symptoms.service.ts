@@ -21,6 +21,7 @@ import { ResponseActionDto } from './dto/response-action.dto';
 import { User, UserDocument } from 'src/users/users.schema';
 import { Role, RoleDocument } from 'src/role/schemas/role.schema';
 import { AlertsService } from 'src/alert/alerts.service';
+import { AnalysisService } from 'src/ai-analysis/analysis.service';
 
 // ── Mapping: medical service → clinical focus areas ──────────────────────────
 //
@@ -187,6 +188,7 @@ export class SymptomsService {
     @InjectModel(Role.name)
     private roleModel: Model<RoleDocument>,
     private readonly alertsService: AlertsService,   // ← Injection du service d'alertes
+    private readonly analysisService: AnalysisService, // ← Injection du service d'analyse AI
   ) {}
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -535,9 +537,35 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
   } else {
     console.log(`ℹ️ Aucune alerte déclenchée`);
   }
-    }
-
     
+ 
+    // === ANALYSE IA DES SYMPTÔMES ===
+
+  // Construire les answers avec les labels lisibles (question + answer)
+  const formAnswers = response.answers.map((ans) => ({
+    question: questionMap.get(ans.questionId)?.label ?? ans.questionId,
+    answer: ans.value,
+  }));
+
+  console.log(`🤖 [ANALYSE IA] Génération pour patient: ${normalizedPatientId}`);
+  console.log(`🤖 [ANALYSE IA] Answers to analyze: ${JSON.stringify(formAnswers)}`);
+
+  try {
+    const analysis = await this.analysisService.generateFromFormAnswers(
+      normalizedPatientId,
+      formAnswers,
+    );
+
+    if (analysis) {
+      console.log(`✅ Analyse IA sauvegardée. ID: ${analysis._id}, Gravity: ${analysis.gravity}`);
+    } else {
+      console.log(`⚠️ Aucune analyse IA créée pour patient ${normalizedPatientId}`);
+    }
+  } catch (error) {
+    console.error('⚠️ Erreur lors de l’appel à l’analyse IA:', error);
+  }
+}
+// === FIN ANALYSE IA ===
 
     return response;
     //fin partie
