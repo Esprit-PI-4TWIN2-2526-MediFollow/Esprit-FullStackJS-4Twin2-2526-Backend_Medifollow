@@ -107,3 +107,22 @@ npm install chart.js ng2-charts@5 --legacy-peer-deps
 //pour alert (detection anomalie)
 //installer:
 npm install @nestjs/axios axios
+
+
+
+
+
+
+//Assurer la haute disponibilité de mon serveur avec utilisation de docker 
+docker run -d --name medifollow-mongo --restart unless-stopped -p 27017:27017 -v medifollow-mongo-data:/data/db mongo:7
+
+//visibilité sur le windows il faut stopper le mongo local 
+net stop MongoDB
+
+// Se connecter base de données du container 
+mongodb://localhost:27017
+
+// ou bien essayer de savoir l'IP du container pour se connecter 
+docker inspect medifollow-mongo --format "{{.NetworkSettings.Networks.bridge.IPAddress}}"
+
+// un petit test dans le CMD docker exec -it medifollow-mongo mongosh medifollow --eval "db.roles.countDocuments()"
