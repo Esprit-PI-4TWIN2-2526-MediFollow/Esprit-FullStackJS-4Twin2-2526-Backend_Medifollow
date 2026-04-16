@@ -4,9 +4,8 @@ services:
     env: node
     region: oregon
     plan: free
-    rootDir: ""
     buildCommand: npm install --production=false && npm run build
-    startCommand: node dist/main.js
+    startCommand: sh -c 'cd /opt/render/project/src && ls -la .. && node ../dist/main.js'
     healthCheckPath: /
     envVars:
       - key: NODE_ENV
