@@ -11,7 +11,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "echo '=== START PROD ===' && pwd && ls -la && ls -la dist && node dist/main.js",
+    "start:prod": "node dist/src/main.js",
     "seed": "ts-node -r tsconfig-paths/register src/seed.ts",
     "list-users": "ts-node -r tsconfig-paths/register src/list-users.ts",
     "change-password": "ts-node -r tsconfig-paths/register src/change-password.ts",
