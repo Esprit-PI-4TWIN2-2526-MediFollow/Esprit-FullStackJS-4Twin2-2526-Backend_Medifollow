@@ -4,8 +4,8 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: npm install --production=false && npm run build
-    startCommand: node /opt/render/project/src/dist/main.js
+    buildCommand: npm install --production=false && npm run build && echo "=== BUILD COMPLETE ===" && pwd && echo "=== ROOT CONTENTS ===" && ls -la && echo "=== DIST CONTENTS ===" && ls -la dist && echo "=== CHECKING /opt/render/project/src ===" && ls -la /opt/render/project/src 2>&1 || echo "Path does not exist"
+    startCommand: echo "=== START COMMAND ===" && pwd && echo "=== LISTING CURRENT DIR ===" && ls -la && echo "=== LISTING DIST ===" && ls -la dist 2>&1 || echo "No dist here" && echo "=== LISTING /opt/render/project/src ===" && ls -la /opt/render/project/src 2>&1 || echo "Path does not exist" && echo "=== TRYING TO START ===" && node dist/main.js
     healthCheckPath: /
     envVars:
       - key: NODE_ENV
