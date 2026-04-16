@@ -9,9 +9,12 @@ export class EmailService {
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: process.env.MAIL_USER, // correction : correspond à ton .env
-        pass: process.env.MAIL_PASS, // mot de passe d'application Gmail
+        user: process.env.MAIL_USER,
+        pass: process.env.MAIL_PASS,
       },
+      tls: {
+        rejectUnauthorized: false // Accepter les certificats auto-signés en dev
+      }
     });
   }
 
@@ -125,6 +128,15 @@ export class EmailService {
       </div>
     `;
 
+    await this.transporter.sendMail({
+      from: `"Medifollow" <${process.env.MAIL_USER}>`,
+      to,
+      subject,
+      html,
+    });
+  }
+
+  async sendEmail(to: string, subject: string, html: string) {
     await this.transporter.sendMail({
       from: `"Medifollow" <${process.env.MAIL_USER}>`,
       to,
