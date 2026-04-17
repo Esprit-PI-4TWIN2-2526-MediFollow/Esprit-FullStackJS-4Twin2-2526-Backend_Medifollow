@@ -1,4 +1,3 @@
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -20,6 +19,10 @@ import { SymptomsModule } from './symptoms/symptoms.module';
 import { CoordinatorModule } from './coordinator/coordinator.module';
 import { VoiceCallsModule } from './voice-calls/voice-calls.module';
 import { AlertModule } from './alert/alert.module';
+import { AiAnalysisModule } from './ai-analysis/ai-analysis.module';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+// import { DatabaseModule } from './database/database.module';
+import { ChatModule } from './communication/chat.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -35,7 +38,9 @@ import { AlertModule } from './alert/alert.module';
 
       }),
       inject: [ConfigService],
+      
     }),
+    //DatabaseModule,
     UsersModule,
     AuthModule,
     EmailModule,
@@ -51,6 +56,11 @@ import { AlertModule } from './alert/alert.module';
     CoordinatorModule,
     VoiceCallsModule,
     AlertModule,
+
+    AiAnalysisModule,
+
+    ChatModule
+
   ],
   controllers: [AppController],
   providers: [AppService],

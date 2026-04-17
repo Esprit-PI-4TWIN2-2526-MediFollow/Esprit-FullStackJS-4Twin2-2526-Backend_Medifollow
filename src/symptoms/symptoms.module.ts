@@ -7,6 +7,7 @@ import { SymptomResponse, SymptomResponseSchema } from './schemas/symptom-respon
 import { User, UserSchema } from 'src/users/users.schema';
 import { Role, RoleSchema } from 'src/role/schemas/role.schema';
 import { AlertModule } from 'src/alert/alert.module';
+import { AiAnalysisModule } from 'src/ai-analysis/ai-analysis.module';
 
 @Module({
   imports: [
@@ -16,7 +17,8 @@ import { AlertModule } from 'src/alert/alert.module';
       { name: User.name, schema: UserSchema },
       { name: Role.name, schema: RoleSchema },
     ]),
-    AlertModule
+    AlertModule,
+    AiAnalysisModule,
   ],
   controllers: [SymptomsController],
   providers: [SymptomsService],
