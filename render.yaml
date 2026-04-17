@@ -46,3 +46,7 @@ services:
         sync: false
       - key: PUBLIC_BASE_URL
         sync: false
+      - key: GRAVITY_SERVICE_URL
+        value: https://gravity-service.onrender.com
+      - key: ML_SERVICE_URL
+        value: https://ml-service-vkpy.onrender.com

@@ -9,7 +9,7 @@ import { Analysis } from './schemas/analysis.schema';
 
 @Injectable()
 export class AnalysisService {
-  private readonly ML_SERVICE_URL = 'http://127.0.0.1:8000/analysis/generate';
+  private readonly ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'https://ml-service-vkpy.onrender.com';
 
   constructor(
     private readonly httpService: HttpService,
@@ -37,7 +37,7 @@ async generateFromFormAnswers(
     console.log(`🤖 [ML] Envoi des réponses au service ML: ${JSON.stringify(formAnswers)}`);
 
     const response = await firstValueFrom(
-      this.httpService.post(this.ML_SERVICE_URL, {
+      this.httpService.post(`${this.ML_SERVICE_URL}/analysis/generate`, {
         patient_id: patientId,
         patient_name: patientFullName,
         answers: formAnswers,

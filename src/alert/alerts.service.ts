@@ -7,9 +7,8 @@ import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class AlertsService {
-//url de fastApi
- // private readonly fastApiUrl = 'http://localhost:8000/predict-alert';
- private readonly fastApiUrl = 'http://127.0.0.1:8000/predict-alert';
+  // URL for ML alert prediction service
+  private readonly fastApiUrl = process.env.ML_SERVICE_URL || 'https://ml-service-vkpy.onrender.com';
 
   constructor(
     @InjectModel(Alert.name) private alertModel: Model<Alert>,
@@ -24,7 +23,7 @@ export class AlertsService {
   ) {
     try {
       const response = await firstValueFrom(
-        this.httpService.post(this.fastApiUrl, vitals)
+        this.httpService.post(`${this.fastApiUrl}/predict-alert`, vitals)
       );
 
       const alertData = response.data;
