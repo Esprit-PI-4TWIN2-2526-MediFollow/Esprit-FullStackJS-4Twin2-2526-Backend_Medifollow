@@ -5,6 +5,9 @@ module.exports = {
   transform: {
     '^.+\\.(t|j)s$': 'ts-jest',
   },
+  moduleNameMapper: {
+    '^src/(.*)$': '<rootDir>/$1',
+  },
   collectCoverage: true,
   coverageDirectory: '../coverage',
   coverageReporters: ['lcov', 'text'],
