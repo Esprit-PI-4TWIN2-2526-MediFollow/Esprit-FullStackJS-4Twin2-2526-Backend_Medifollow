@@ -8,6 +8,8 @@ import { SubmitResponseDto } from './dto/submit-response.dto';
 import { ResponseActionDto } from './dto/response-action.dto';
 import { GenerateSymptomDto } from './dto/generate-symptom.dto';
 
+jest.mock('@nestjs/axios', () => ({ HttpService: jest.fn() }), { virtual: true });
+
 describe('SymptomsController', () => {
   let controller: SymptomsController;
   let service: Record<string, jest.Mock>;

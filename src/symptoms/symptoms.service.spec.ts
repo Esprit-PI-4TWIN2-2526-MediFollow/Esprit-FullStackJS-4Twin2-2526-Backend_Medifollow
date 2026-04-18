@@ -17,6 +17,8 @@ import { CreateSymptomDto } from './dto/create-symptom.dto';
 import { SubmitResponseDto } from './dto/submit-response.dto';
 import { UpdateSymptomDto } from './dto/update-symptom.dto';
 
+jest.mock('@nestjs/axios', () => ({ HttpService: jest.fn() }), { virtual: true });
+
 type QueryMock = {
   sort: jest.Mock;
   populate: jest.Mock;
