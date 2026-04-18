@@ -23,11 +23,14 @@ import { AiAnalysisModule } from './ai-analysis/ai-analysis.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 // import { DatabaseModule } from './database/database.module';
 import { ChatModule } from './communication/chat.module';
+import { MetricsModule } from './metrics/metrics.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      
+
     }),
     ScheduleModule.forRoot(),
     MongooseModule.forRootAsync({
@@ -59,8 +62,9 @@ import { ChatModule } from './communication/chat.module';
 
     AiAnalysisModule,
 
-    ChatModule
+    ChatModule,
 
+    MetricsModule
   ],
   controllers: [AppController],
   providers: [AppService],
