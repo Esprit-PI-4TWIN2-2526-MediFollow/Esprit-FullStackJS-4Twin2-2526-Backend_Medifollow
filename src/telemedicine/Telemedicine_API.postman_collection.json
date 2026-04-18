@@ -1,0 +1,465 @@
+{
+  "info": {
+    "name": "Medifollow - Télémédecine API",
+    "description": "Collection complète des endpoints du module télémédecine",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Consultations",
+      "item": [
+        {
+          "name": "Créer consultation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"PATIENT_ID_HERE\",\n  \"doctorId\": \"DOCTOR_ID_HERE\",\n  \"type\": \"scheduled\",\n  \"scheduledAt\": \"2026-04-10T10:00:00Z\",\n  \"reason\": \"Consultation de suivi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/consultations",
+              "host": ["{{baseUrl}}"],
+              "path": ["consultations"]
+            }
+          }
+        },
+        {
+          "name": "Lister consultations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/consultations?status=pending",
+              "host": ["{{baseUrl}}"],
+              "path": ["consultations"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Obtenir consultation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/consultations/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["consultations", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "CONSULTATION_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Consultations médecin",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/consultations/doctor/:doctorId",
+              "host": ["{{baseUrl}}"],
+              "path": ["consultations", "doctor", ":doctorId"],
+              "variable": [
+                {
+                  "key": "doctorId",
+                  "value": "DOCTOR_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Consultations aujourd'hui",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/consultations/doctor/:doctorId/today",
+              "host": ["{{baseUrl}}"],
+              "path": ["consultations", "doctor", ":doctorId", "today"],
+              "variable": [
+                {
+                  "key": "doctorId",
+                  "value": "DOCTOR_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Démarrer consultation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/consultations/:id/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["consultations", ":id", "start"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "CONSULTATION_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Terminer consultation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Patient en bonne santé générale\",\n  \"diagnosis\": \"Grippe saisonnière\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/consultations/:id/end",
+              "host": ["{{baseUrl}}"],
+              "path": ["consultations", ":id", "end"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "CONSULTATION_ID"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Prescriptions",
+      "item": [
+        {
+          "name": "Créer prescription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consultationId\": \"CONSULTATION_ID\",\n  \"medications\": [\n    {\n      \"name\": \"Doliprane 1000mg\",\n      \"dosage\": \"1000mg\",\n      \"frequency\": \"3 fois par jour\",\n      \"duration\": \"5 jours\",\n      \"instructions\": \"À prendre pendant les repas\"\n    },\n    {\n      \"name\": \"Ibuprofène 400mg\",\n      \"dosage\": \"400mg\",\n      \"frequency\": \"2 fois par jour\",\n      \"duration\": \"3 jours\",\n      \"instructions\": \"En cas de douleur\"\n    }\n  ],\n  \"pharmacyNotes\": \"Délivrer en une seule fois\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/prescriptions",
+              "host": ["{{baseUrl}}"],
+              "path": ["prescriptions"]
+            }
+          }
+        },
+        {
+          "name": "Lister prescriptions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescriptions",
+              "host": ["{{baseUrl}}"],
+              "path": ["prescriptions"]
+            }
+          }
+        },
+        {
+          "name": "Obtenir prescription",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescriptions/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["prescriptions", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "PRESCRIPTION_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Recherche par QR code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescriptions/qr/:qrCode",
+              "host": ["{{baseUrl}}"],
+              "path": ["prescriptions", "qr", ":qrCode"],
+              "variable": [
+                {
+                  "key": "qrCode",
+                  "value": "QR_CODE_HERE"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Émettre prescription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"digitalSignature\": \"DOCTOR_SIGNATURE_HASH\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/prescriptions/:id/issue",
+              "host": ["{{baseUrl}}"],
+              "path": ["prescriptions", ":id", "issue"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "PRESCRIPTION_ID"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Documents Médicaux",
+      "item": [
+        {
+          "name": "Upload document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "patientId",
+                  "value": "PATIENT_ID",
+                  "type": "text"
+                },
+                {
+                  "key": "type",
+                  "value": "lab-result",
+                  "type": "text"
+                },
+                {
+                  "key": "title",
+                  "value": "Analyse de sang",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Bilan sanguin complet",
+                  "type": "text"
+                },
+                {
+                  "key": "examDate",
+                  "value": "2026-04-05",
+                  "type": "text"
+                },
+                {
+                  "key": "laboratory",
+                  "value": "Laboratoire Central",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/medical-documents/upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["medical-documents", "upload"]
+            }
+          }
+        },
+        {
+          "name": "Lister documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/medical-documents?patientId=PATIENT_ID",
+              "host": ["{{baseUrl}}"],
+              "path": ["medical-documents"],
+              "query": [
+                {
+                  "key": "patientId",
+                  "value": "PATIENT_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Documents patient",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/medical-documents/patient/:patientId",
+              "host": ["{{baseUrl}}"],
+              "path": ["medical-documents", "patient", ":patientId"],
+              "variable": [
+                {
+                  "key": "patientId",
+                  "value": "PATIENT_ID"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Partager document",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [\"USER_ID_1\", \"USER_ID_2\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/medical-documents/:id/share",
+              "host": ["{{baseUrl}}"],
+              "path": ["medical-documents", ":id", "share"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "DOCUMENT_ID"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

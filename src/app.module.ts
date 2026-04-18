@@ -24,6 +24,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 // import { DatabaseModule } from './database/database.module';
 import { ChatModule } from './communication/chat.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { TelemedicineModule } from './telemedicine/telemedicine.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -59,12 +60,10 @@ import { MetricsModule } from './metrics/metrics.module';
     CoordinatorModule,
     VoiceCallsModule,
     AlertModule,
-
     AiAnalysisModule,
-
     ChatModule,
-
-    MetricsModule
+    MetricsModule,
+    TelemedicineModule,
   ],
   controllers: [AppController],
   providers: [AppService],
