@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -37,6 +38,16 @@ export class CreateQuestionDto {
   @IsBoolean()
   @IsOptional()
   required?: boolean;
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  occurrencesPerDay?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  maxOccurrencesPerDay?: number;
 
   @IsArray()
   @IsString({ each: true })

@@ -69,6 +69,8 @@ describe('SymptomsService', () => {
       category: 'vital_parameters',
       order: 0,
       required: true,
+      occurrencesPerDay: 1,
+      maxOccurrencesPerDay: 2,
       options: [],
     },
     {
@@ -78,6 +80,8 @@ describe('SymptomsService', () => {
       category: 'vital_parameters',
       order: 1,
       required: true,
+      occurrencesPerDay: 1,
+      maxOccurrencesPerDay: 2,
       options: [],
     },
     {
@@ -87,6 +91,8 @@ describe('SymptomsService', () => {
       category: 'subjective_symptoms',
       order: 2,
       required: false,
+      occurrencesPerDay: 0,
+      maxOccurrencesPerDay: 3,
       options: [],
     },
   ];
@@ -178,6 +184,7 @@ describe('SymptomsService', () => {
     };
 
     roleModel = {
+      find: jest.fn(),
       findById: jest.fn(),
     };
 
@@ -290,6 +297,8 @@ describe('SymptomsService', () => {
             type: 'number',
             order: 0,
             required: true,
+            occurrencesPerDay: 1,
+            maxOccurrencesPerDay: 3,
             options: [],
             category: 'vital_parameters',
           },
@@ -335,6 +344,75 @@ describe('SymptomsService', () => {
         title: 'Daily symptoms',
         patientIds: [patientId],
       });
+    });
+  });
+
+  describe('getPatientsWithAssignmentStatus', () => {
+    it('should mark patients assigned only when ids match by string value', async () => {
+      const patientRoleId = new Types.ObjectId();
+      const assignedPatientObjectId = new Types.ObjectId(patientId);
+      const unassignedPatientId = new Types.ObjectId();
+      const staffId = new Types.ObjectId();
+      const roleQuery = mockQuery([{ _id: patientRoleId, name: 'patient' }]);
+      const usersQuery = mockQuery([
+        {
+          _id: assignedPatientObjectId,
+          firstName: 'Assigned',
+          lastName: 'Patient',
+          email: 'assigned@example.com',
+          role: patientRoleId,
+        },
+        {
+          _id: unassignedPatientId,
+          firstName: 'Free',
+          lastName: 'Patient',
+          email: 'free@example.com',
+          role: 'patient',
+        },
+        {
+          _id: staffId,
+          firstName: 'Doctor',
+          lastName: 'User',
+          email: 'doctor@example.com',
+          role: 'doctor',
+        },
+      ]);
+      const symptomsQuery = mockQuery([
+        {
+          patientIds: [assignedPatientObjectId],
+          patientId: undefined,
+        },
+      ]);
+
+      roleModel.find.mockReturnValue(roleQuery);
+      userModel.find.mockReturnValue(usersQuery);
+      symptomModel.find.mockReturnValue(symptomsQuery);
+
+      const result = await service.getPatientsWithAssignmentStatus();
+
+      expect(roleModel.find).toHaveBeenCalledWith({
+        name: {
+          $regex: '^patient$',
+          $options: 'i',
+        },
+      });
+      expect(symptomModel.find).toHaveBeenCalledWith({ isActive: true });
+      expect(symptomsQuery.select).toHaveBeenCalledWith('patientIds patientId');
+      expect(userModel.find).toHaveBeenCalledWith();
+      expect(usersQuery.select).toHaveBeenCalledWith('_id firstName lastName email role');
+      expect(usersQuery.sort).toHaveBeenCalledWith({ firstName: 1, lastName: 1, _id: 1 });
+      expect(result).toEqual([
+        {
+          _id: patientId,
+          name: 'Assigned Patient',
+          isAssigned: true,
+        },
+        {
+          _id: unassignedPatientId.toString(),
+          name: 'Free Patient',
+          isAssigned: false,
+        },
+      ]);
     });
   });
 
@@ -491,15 +569,22 @@ describe('SymptomsService', () => {
 
     it('should save a patient response, extract vitals, create alerts, and launch analysis', async () => {
       symptomModel.findById.mockReturnValue(mockQuery(makeSymptomDoc()));
-      symptomResponseModel.countDocuments.mockReturnValue(mockQuery(0));
+      symptomResponseModel.find.mockReturnValue(mockQuery([]));
 
       const result = await service.saveResponse(responseDto());
 
-      expect(symptomResponseModel.countDocuments).toHaveBeenCalledWith({
+      expect(symptomResponseModel.find).toHaveBeenCalledWith({
         patientId,
+        symptomFormId: formId,
         createdAt: {
           $gte: expect.any(Date),
-          $lte: expect.any(Date),
+          $lt: expect.any(Date),
+        },
+        'answers.questionId': {
+          $in: [
+            bloodPressureQuestionId.toString(),
+            heartRateQuestionId.toString(),
+          ],
         },
       });
       expect(symptomResponseModel).toHaveBeenCalledWith(
@@ -549,9 +634,22 @@ describe('SymptomsService', () => {
       expect(result._id).toEqual(responseId);
     });
 
-    it('should reject submissions after the daily limit is reached', async () => {
+    it('should reject answers after the question daily limit is reached', async () => {
       symptomModel.findById.mockReturnValue(mockQuery(makeSymptomDoc()));
-      symptomResponseModel.countDocuments.mockReturnValue(mockQuery(3));
+      symptomResponseModel.find.mockReturnValue(
+        mockQuery([
+          {
+            answers: [
+              { questionId: bloodPressureQuestionId.toString(), value: '120/80' },
+            ],
+          },
+          {
+            answers: [
+              { questionId: bloodPressureQuestionId.toString(), value: '121/81' },
+            ],
+          },
+        ]),
+      );
 
       await expect(service.saveResponse(responseDto())).rejects.toBeInstanceOf(
         BadRequestException,
@@ -561,7 +659,6 @@ describe('SymptomsService', () => {
 
     it('should reject an answer whose question does not belong to the form', async () => {
       symptomModel.findById.mockReturnValue(mockQuery(makeSymptomDoc()));
-      symptomResponseModel.countDocuments.mockReturnValue(mockQuery(0));
 
       await expect(
         service.saveResponse({
@@ -569,6 +666,22 @@ describe('SymptomsService', () => {
           answers: [{ questionId: new Types.ObjectId().toString(), value: 'bad' }],
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
+      expect(symptomResponseModel).not.toHaveBeenCalled();
+    });
+
+    it('should reject duplicate question answers in one submission', async () => {
+      symptomModel.findById.mockReturnValue(mockQuery(makeSymptomDoc()));
+
+      await expect(
+        service.saveResponse({
+          ...responseDto(),
+          answers: [
+            { questionId: bloodPressureQuestionId.toString(), value: '120/80' },
+            { questionId: bloodPressureQuestionId.toString(), value: '121/81' },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(symptomResponseModel.find).not.toHaveBeenCalled();
       expect(symptomResponseModel).not.toHaveBeenCalled();
     });
 
@@ -605,6 +718,90 @@ describe('SymptomsService', () => {
       );
       expect(query.sort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
       expect(result).toBe(response);
+    });
+  });
+
+  describe('getTodayQuestionStatus', () => {
+    it('should return required, optional, and blocked question states for today', async () => {
+      const form = makeSymptomDoc();
+      const formQuery = mockQuery(form);
+      symptomModel.findOne.mockReturnValue(formQuery);
+      symptomResponseModel.find.mockReturnValue(
+        mockQuery([
+          {
+            answers: [
+              { questionId: heartRateQuestionId.toString(), value: 80 },
+              { questionId: painQuestionId.toString(), value: 4 },
+            ],
+          },
+          {
+            answers: [
+              { questionId: painQuestionId.toString(), value: 5 },
+            ],
+          },
+          {
+            answers: [
+              { questionId: painQuestionId.toString(), value: 6 },
+            ],
+          },
+        ]),
+      );
+
+      const result = await service.getTodayQuestionStatus(` ${patientId} `);
+
+      expect(symptomModel.findOne).toHaveBeenCalledWith({
+        $or: [{ patientIds: patientId }, { patientId }],
+        isActive: true,
+      });
+      expect(formQuery.sort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
+      expect(symptomResponseModel.find).toHaveBeenCalledWith({
+        patientId,
+        symptomFormId: formId,
+        createdAt: {
+          $gte: expect.any(Date),
+          $lt: expect.any(Date),
+        },
+        'answers.questionId': {
+          $in: [
+            bloodPressureQuestionId.toString(),
+            heartRateQuestionId.toString(),
+            painQuestionId.toString(),
+          ],
+        },
+      });
+      expect(result).toEqual([
+        {
+          questionId: bloodPressureQuestionId.toString(),
+          questionText: 'Blood pressure',
+          required: true,
+          remainingRequired: 1,
+          remainingOptional: 1,
+          isBlocked: false,
+        },
+        {
+          questionId: heartRateQuestionId.toString(),
+          questionText: 'Heart rate',
+          required: false,
+          remainingRequired: 0,
+          remainingOptional: 1,
+          isBlocked: false,
+        },
+        {
+          questionId: painQuestionId.toString(),
+          questionText: 'Pain level',
+          required: false,
+          remainingRequired: 0,
+          remainingOptional: 0,
+          isBlocked: true,
+        },
+      ]);
+    });
+
+    it('should reject an empty patient id for question status', async () => {
+      await expect(service.getTodayQuestionStatus('   ')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(symptomModel.findOne).not.toHaveBeenCalled();
     });
   });
 
