@@ -12,6 +12,8 @@ import { Alert } from 'src/alert/schemas/alert.schema';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { AlertsService } from 'src/alert/alerts.service';
+import { NotificationsService } from 'src/notifications/notifications.service';
+import { User, UserDocument } from 'src/users/users.schema';
 
 @Injectable()
 export class QuestionnaireService {
@@ -22,9 +24,11 @@ export class QuestionnaireService {
 
     @InjectModel(QuestionnaireResponse.name)
     private responseModel: Model<QuestionnaireResponseDocument>,
-   
 
-    
+    @InjectModel(User.name)
+    private userModel: Model<UserDocument>,
+
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ── Questionnaires ──────────────────────────────────────
@@ -150,8 +154,65 @@ export class QuestionnaireService {
       { $inc: { responsesCount: 1 } }
     ).exec();
 
+    const savedResponse = await response.save();
+
+    // Créer notification pour le médecin
+    try {
+      const patient = await this.userModel.findById(patientId)
+        .select('firstName lastName primaryDoctor')
+        .lean()
+        .exec();
+
+      if (patient && patient.primaryDoctor) {
+        // Trouver le médecin par nom - handle both "Dr. Name" and "Name" formats
+        const doctorName = String(patient.primaryDoctor).trim();
+        const cleanName = doctorName.replace(/^Dr\.?\s*/i, '').trim();
+        const nameParts = cleanName.split(' ');
+        const firstName = nameParts[0];
+        const lastName = nameParts.slice(1).join(' ');
+
+        console.log(`🔍 Looking for doctor: "${cleanName}" (firstName: "${firstName}", lastName: "${lastName}")`);
+
+        const doctor = await this.userModel.findOne({
+          $or: [
+            { firstName, lastName },
+            { firstName: { $regex: `^${firstName}`, $options: 'i' },
+              lastName: { $regex: `^${lastName}`, $options: 'i' } },
+            // Also try matching full name
+            { firstName: { $regex: `^${cleanName}`, $options: 'i' } },
+          ]
+        }).select('_id firstName lastName').lean().exec();
+
+        if (doctor) {
+          await this.notificationsService.create({
+            recipientId: String(doctor._id),
+            type: 'questionnaire',
+            priority: 'medium',
+            title: 'Questionnaire Completed',
+            message: `${patient.firstName} ${patient.lastName} completed "${q.title}"`,
+            data: {
+              responseId: savedResponse._id.toString(),
+              questionnaireId: questionnaireId,
+              questionnaireTitle: q.title,
+              medicalService: q.medicalService,
+              answersCount: dto.answers.length,
+            },
+            patientId: patientId,
+            actionUrl: `/doctor/patient/${patientId}/responses`,
+          });
+          console.log(`✅ Questionnaire notification created for doctor ${doctor.firstName} ${doctor.lastName} (${doctor._id})`);
+        } else {
+          console.log(`⚠️ Doctor not found for patient ${patient.firstName} ${patient.lastName}`);
+          console.log(`   Searched for: "${cleanName}" (firstName: "${firstName}", lastName: "${lastName}")`);
+        }
+      } else {
+        console.log(`⚠️ Patient ${patientId} has no primaryDoctor assigned`);
+      }
+    } catch (notifError) {
+      console.error('⚠️ Error creating questionnaire notification:', notifError);
+    }
   
-    return response.save();
+    return savedResponse;
   }
 
 
