@@ -22,6 +22,7 @@ import { User, UserDocument } from 'src/users/users.schema';
 import { Role, RoleDocument } from 'src/role/schemas/role.schema';
 import { AlertsService } from 'src/alert/alerts.service';
 import { AnalysisService } from 'src/ai-analysis/analysis.service';
+import { NotificationsService } from 'src/notifications/notifications.service';
 
 // ── Mapping: medical service → clinical focus areas ──────────────────────────
 //
@@ -209,6 +210,7 @@ export class SymptomsService {
     private roleModel: Model<RoleDocument>,
     private readonly alertsService: AlertsService,   // ← Injection du service d'alertes
     private readonly analysisService: AnalysisService, // ← Injection du service d'analyse AI
+    private readonly notificationsService: NotificationsService, // ← Injection du service de notifications
   ) {}
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -604,6 +606,38 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
   } catch (error) {
     console.error('⚠️ Erreur lors de l’appel à l’analyse IA:', error);
   }
+
+  // === CRÉER NOTIFICATION POUR LE MÉDECIN ===
+  if (doctorId) {
+    try {
+      const patient = await this.userModel.findById(normalizedPatientId)
+        .select('firstName lastName')
+        .lean()
+        .exec();
+
+      if (patient) {
+        await this.notificationsService.create({
+          recipientId: doctorId,
+          type: 'symptom',
+          priority: 'high',
+          title: 'New Symptom Report',
+          message: `${patient.firstName} ${patient.lastName} submitted daily symptoms`,
+          data: {
+            responseId: response._id.toString(),
+            vitals: response.vitals,
+            formId: symptomForm._id.toString(),
+            formTitle: symptomForm.title,
+          },
+          patientId: normalizedPatientId,
+          actionUrl: `/symptoms/responses/${response._id}`,
+        });
+        console.log(`📬 Notification créée pour le médecin ${doctorId}`);
+      }
+    } catch (notifError) {
+      console.error('⚠️ Erreur création notification:', notifError);
+    }
+  }
+  // === FIN NOTIFICATION ===
 }
 // === FIN ANALYSE IA ===
 

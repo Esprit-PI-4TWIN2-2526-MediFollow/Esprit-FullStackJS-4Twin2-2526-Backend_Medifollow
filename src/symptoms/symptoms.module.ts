@@ -8,6 +8,7 @@ import { User, UserSchema } from 'src/users/users.schema';
 import { Role, RoleSchema } from 'src/role/schemas/role.schema';
 import { AlertModule } from 'src/alert/alert.module';
 import { AiAnalysisModule } from 'src/ai-analysis/ai-analysis.module';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AiAnalysisModule } from 'src/ai-analysis/ai-analysis.module';
     ]),
     AlertModule,
     AiAnalysisModule,
+    NotificationsModule,
   ],
   controllers: [SymptomsController],
   providers: [SymptomsService],

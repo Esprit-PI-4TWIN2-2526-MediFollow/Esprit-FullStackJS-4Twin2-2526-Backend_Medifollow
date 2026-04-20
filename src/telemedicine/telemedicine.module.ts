@@ -7,6 +7,7 @@ import { PrescriptionService } from './prescription.service';
 import { MedicalDocumentsController } from './medical-documents.controller';
 import { MedicalDocumentsService } from './medical-documents.service';
 import { TelemedicineNotificationService } from './telemedicine-notification.service';
+import { ConsultationReminderService } from './consultation-reminder.service';
 import { Consultation, ConsultationSchema } from './schemas/consultation.schema';
 import { Prescription, PrescriptionSchema } from './schemas/prescription.schema';
 import { MedicalDocument, MedicalDocumentSchema } from './schemas/medical-document.schema';
@@ -14,6 +15,7 @@ import { VideoSession, VideoSessionSchema } from './schemas/video-session.schema
 import { User, UserSchema } from '../users/users.schema';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { EmailModule } from '../users/email/email.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -26,6 +28,7 @@ import { EmailModule } from '../users/email/email.module';
     ]),
     CloudinaryModule,
     EmailModule,
+    NotificationsModule,
   ],
   controllers: [
     ConsultationController,
@@ -37,6 +40,7 @@ import { EmailModule } from '../users/email/email.module';
     PrescriptionService,
     MedicalDocumentsService,
     TelemedicineNotificationService,
+    ConsultationReminderService,
   ],
   exports: [
     ConsultationService,
