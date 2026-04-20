@@ -47,6 +47,11 @@ export class CreateQuestionDto {
   @IsInt()
   @IsOptional()
   @Min(0)
+  measurementsPerDay?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
   maxOccurrencesPerDay?: number;
 
   @IsArray()

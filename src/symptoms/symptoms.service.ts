@@ -1124,12 +1124,31 @@ Return raw JSON array only.
     answers: NormalizedSymptomAnswer[],
     questionById: Map<string, Question>,
   ): Promise<void> {
-    const submittedQuestionIds = answers.map((answer) => answer.questionId);
-    const counts = await this.getTodayQuestionCounts(
-      patientId,
-      symptomForm,
-      submittedQuestionIds,
+    const today = new Date();
+    const dayRange = {
+      $gte: this.getStartOfDay(today),
+      $lt: this.getEndOfDay(today),
+    };
+    const maxAttempts = Math.max(
+      ...(symptomForm.questions ?? []).map((question) =>
+        this.coerceStoredOccurrenceLimit(
+          (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
+          1,
+        ),
+      ),
+      1,
     );
+
+    const totalSubmissionsToday = await this.symptomResponseModel.countDocuments({
+      patientId,
+      createdAt: dayRange,
+    });
+
+    if (totalSubmissionsToday >= maxAttempts) {
+      throw new BadRequestException(
+        `Maximum submissions (${maxAttempts}) reached for today`,
+      );
+    }
 
     for (const answer of answers) {
       const question = questionById.get(answer.questionId);
@@ -1137,18 +1156,51 @@ Return raw JSON array only.
         continue;
       }
 
-      const status = this.buildTodayQuestionStatus(
-        question,
-        counts.get(answer.questionId) ?? 0,
+      const limit = this.coerceStoredOccurrenceLimit(
+        (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
+        1,
+      );
+      const rawTodayCount = await this.symptomResponseModel.countDocuments({
+        patientId,
+        createdAt: dayRange,
+        'answers.questionId': question._id?.toString() ?? answer.questionId,
+      });
+      const todayCount = Number.isFinite(rawTodayCount) ? Number(rawTodayCount) : 0;
+      const isLimitReached = todayCount >= limit;
+
+      console.log(
+        'CHECK:',
+        question.label,
+        'count:',
+        todayCount,
+        'limit:',
+        limit,
+        'limitReached:',
+        isLimitReached,
       );
 
-      if (status.isBlocked) {
-        const { maxOccurrencesPerDay } = this.getQuestionOccurrenceConfig(question);
+      if (!isLimitReached && question.required && this.isAnswerEmpty(answer.value)) {
         throw new BadRequestException(
-          `Question "${question.label}" has reached the maximum of ${maxOccurrencesPerDay} submissions today`,
+          `${question.label} is required`,
         );
       }
     }
+  }
+
+  private isAnswerEmpty(value: NormalizedSymptomAnswer['value']): boolean {
+    if (value === null || value === undefined) {
+      return true;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim() === '';
+    }
+
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+
+    return false;
   }
 
   private async getTodayQuestionCounts(
@@ -1203,9 +1255,7 @@ Return raw JSON array only.
     count: number,
   ): TodayQuestionStatus {
     const questionId = question._id?.toString() ?? '';
-    const { occurrencesPerDay, maxOccurrencesPerDay } =
-      this.getQuestionOccurrenceConfig(question);
-    const safeMaxOccurrencesPerDay = Math.max(maxOccurrencesPerDay, occurrencesPerDay);
+    const { occurrencesPerDay, maxOccurrencesPerDay } = this.getQuestionOccurrenceConfig(question);
 
     return {
       questionId,
@@ -1213,10 +1263,10 @@ Return raw JSON array only.
       required: count < occurrencesPerDay,
       remainingRequired: Math.max(occurrencesPerDay - count, 0),
       remainingOptional: Math.max(
-        safeMaxOccurrencesPerDay - Math.max(count, occurrencesPerDay),
+        maxOccurrencesPerDay - Math.max(count, occurrencesPerDay),
         0,
       ),
-      isBlocked: count >= safeMaxOccurrencesPerDay,
+      isBlocked: count >= maxOccurrencesPerDay,
     };
   }
 
@@ -1224,18 +1274,14 @@ Return raw JSON array only.
     occurrencesPerDay: number;
     maxOccurrencesPerDay: number;
   } {
-    const occurrencesPerDay = this.coerceStoredOccurrenceLimit(
-      question.occurrencesPerDay,
-      question.required ? 1 : 0,
-    );
-    const maxOccurrencesPerDay = this.coerceStoredOccurrenceLimit(
-      question.maxOccurrencesPerDay,
-      Math.max(occurrencesPerDay, 3),
+    const limit = this.coerceStoredOccurrenceLimit(
+      (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
+      this.coerceStoredOccurrenceLimit(question.occurrencesPerDay, question.required ? 1 : 0),
     );
 
     return {
-      occurrencesPerDay,
-      maxOccurrencesPerDay: Math.max(maxOccurrencesPerDay, occurrencesPerDay),
+      occurrencesPerDay: limit,
+      maxOccurrencesPerDay: limit,
     };
   }
 
@@ -1297,30 +1343,32 @@ Return raw JSON array only.
         : [];
 
       const occurrencesPerDay = this.normalizeOccurrenceLimit(
-        question.occurrencesPerDay,
+        question.occurrencesPerDay ?? question.measurementsPerDay,
         question.required ? 1 : 0,
         'occurrencesPerDay',
         index,
       );
-      const maxOccurrencesPerDay = this.normalizeOccurrenceLimit(
-        question.maxOccurrencesPerDay,
-        Math.max(occurrencesPerDay, 3),
-        'maxOccurrencesPerDay',
+      const measurementsPerDay = this.normalizeOccurrenceLimit(
+        question.measurementsPerDay ?? question.occurrencesPerDay,
+        occurrencesPerDay,
+        'measurementsPerDay',
         index,
       );
-
-      if (maxOccurrencesPerDay < occurrencesPerDay) {
-        throw new BadRequestException(
-          `Question ${index + 1}: maxOccurrencesPerDay must be greater than or equal to occurrencesPerDay`,
-        );
-      }
+      const normalizedLimit = this.normalizeOccurrenceLimit(
+        measurementsPerDay,
+        occurrencesPerDay,
+        'measurementsPerDay',
+        index,
+      );
+      const maxOccurrencesPerDay = normalizedLimit;
 
       return {
         label:    question.label.trim(),
         type:     question.type.trim() as QuestionType,
         order:    question.order ?? index,
         required: question.required ?? false,
-        occurrencesPerDay,
+        occurrencesPerDay: normalizedLimit,
+        measurementsPerDay: normalizedLimit,
         maxOccurrencesPerDay,
         options,
         ...(question.validation ? { validation: question.validation } : {}),
@@ -1892,10 +1940,45 @@ Return raw JSON array only.
     const serialized = symptom.toObject();
     const patientIds = this.normalizeExistingPatientIds(serialized.patientIds, serialized.patientId);
     const { patientId, ...rest } = serialized;
+    const questions = Array.isArray(rest.questions)
+      ? rest.questions.map((question) => {
+          const normalizedLimit = this.coerceStoredOccurrenceLimit(
+            question.measurementsPerDay,
+            this.coerceStoredOccurrenceLimit(
+              question.occurrencesPerDay,
+              this.coerceStoredOccurrenceLimit(question.maxOccurrencesPerDay, 1),
+            ),
+          );
+          const occurrencesPerDay = this.coerceStoredOccurrenceLimit(
+            question.occurrencesPerDay,
+            normalizedLimit,
+          );
+          const measurementsPerDay = this.coerceStoredOccurrenceLimit(
+            question.measurementsPerDay,
+            occurrencesPerDay,
+          );
+          const maxOccurrencesPerDay = this.coerceStoredOccurrenceLimit(
+            question.maxOccurrencesPerDay,
+            occurrencesPerDay,
+          );
+          const syncedLimit = this.coerceStoredOccurrenceLimit(
+            measurementsPerDay,
+            this.coerceStoredOccurrenceLimit(occurrencesPerDay, maxOccurrencesPerDay),
+          );
+
+          return {
+            ...question,
+            occurrencesPerDay: syncedLimit,
+            measurementsPerDay: syncedLimit,
+            maxOccurrencesPerDay: syncedLimit,
+          };
+        })
+      : [];
 
     return {
       ...rest,
       patientIds,
+      questions,
       status: serialized.status ?? (serialized.isActive ? 'active' : 'inactive'),
     };
   }

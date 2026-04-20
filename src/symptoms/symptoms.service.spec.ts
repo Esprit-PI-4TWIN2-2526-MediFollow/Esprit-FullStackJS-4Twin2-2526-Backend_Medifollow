@@ -92,7 +92,7 @@ describe('SymptomsService', () => {
       order: 2,
       required: false,
       occurrencesPerDay: 0,
-      maxOccurrencesPerDay: 3,
+      maxOccurrencesPerDay: 0,
       options: [],
     },
   ];
@@ -298,7 +298,8 @@ describe('SymptomsService', () => {
             order: 0,
             required: true,
             occurrencesPerDay: 1,
-            maxOccurrencesPerDay: 3,
+            measurementsPerDay: 1,
+            maxOccurrencesPerDay: 1,
             options: [],
             category: 'vital_parameters',
           },
@@ -569,23 +570,28 @@ describe('SymptomsService', () => {
 
     it('should save a patient response, extract vitals, create alerts, and launch analysis', async () => {
       symptomModel.findById.mockReturnValue(mockQuery(makeSymptomDoc()));
-      symptomResponseModel.find.mockReturnValue(mockQuery([]));
+      symptomResponseModel.countDocuments.mockResolvedValue(0);
 
       const result = await service.saveResponse(responseDto());
 
-      expect(symptomResponseModel.find).toHaveBeenCalledWith({
+      expect(symptomResponseModel.countDocuments).toHaveBeenCalledTimes(2);
+      expect(symptomResponseModel.countDocuments).toHaveBeenNthCalledWith(1, {
         patientId,
         symptomFormId: formId,
         createdAt: {
           $gte: expect.any(Date),
           $lt: expect.any(Date),
         },
-        'answers.questionId': {
-          $in: [
-            bloodPressureQuestionId.toString(),
-            heartRateQuestionId.toString(),
-          ],
+        'answers.questionId': bloodPressureQuestionId.toString(),
+      });
+      expect(symptomResponseModel.countDocuments).toHaveBeenNthCalledWith(2, {
+        patientId,
+        symptomFormId: formId,
+        createdAt: {
+          $gte: expect.any(Date),
+          $lt: expect.any(Date),
         },
+        'answers.questionId': heartRateQuestionId.toString(),
       });
       expect(symptomResponseModel).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -636,20 +642,11 @@ describe('SymptomsService', () => {
 
     it('should reject answers after the question daily limit is reached', async () => {
       symptomModel.findById.mockReturnValue(mockQuery(makeSymptomDoc()));
-      symptomResponseModel.find.mockReturnValue(
-        mockQuery([
-          {
-            answers: [
-              { questionId: bloodPressureQuestionId.toString(), value: '120/80' },
-            ],
-          },
-          {
-            answers: [
-              { questionId: bloodPressureQuestionId.toString(), value: '121/81' },
-            ],
-          },
-        ]),
-      );
+      symptomResponseModel.countDocuments.mockImplementation((query: { 'answers.questionId'?: string }) => {
+        return Promise.resolve(
+          query['answers.questionId'] === bloodPressureQuestionId.toString() ? 1 : 0,
+        );
+      });
 
       await expect(service.saveResponse(responseDto())).rejects.toBeInstanceOf(
         BadRequestException,
@@ -775,7 +772,7 @@ describe('SymptomsService', () => {
           questionText: 'Blood pressure',
           required: true,
           remainingRequired: 1,
-          remainingOptional: 1,
+          remainingOptional: 0,
           isBlocked: false,
         },
         {
@@ -783,8 +780,8 @@ describe('SymptomsService', () => {
           questionText: 'Heart rate',
           required: false,
           remainingRequired: 0,
-          remainingOptional: 1,
-          isBlocked: false,
+          remainingOptional: 0,
+          isBlocked: true,
         },
         {
           questionId: painQuestionId.toString(),
