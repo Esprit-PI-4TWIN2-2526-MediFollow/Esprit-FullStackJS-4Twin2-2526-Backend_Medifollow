@@ -9,7 +9,7 @@ import { Analysis } from './schemas/analysis.schema';
 
 @Injectable()
 export class AnalysisService {
-  private readonly ML_SERVICE_URL = process.env.GRAVITY_SERVICE_URL || 'https://gravity-service.onrender.com';
+  private readonly GRAVITY_SERVICE_URL = process.env.GRAVITY_SERVICE_URL || 'https://gravity-service.onrender.com';
 
   constructor(
     private readonly httpService: HttpService,
@@ -34,28 +34,59 @@ async generateFromFormAnswers(
 
     const patientFullName = `${patient.firstName} ${patient.lastName}`;
     console.log(`🤖 [ML] Patient trouvé: ${patientFullName}`);
-    console.log(`🤖 [ML] Envoi des réponses au service ML: ${JSON.stringify(formAnswers)}`);
+    console.log(`🤖 [ML] Envoi des réponses au Gravity Service: ${JSON.stringify(formAnswers)}`);
 
+    // Call Gravity Service directly for severity prediction
     const response = await firstValueFrom(
-      this.httpService.post(`${this.ML_SERVICE_URL}/predict-gravity`, {
+      this.httpService.post(`${this.GRAVITY_SERVICE_URL}/predict-gravity`, {
         patient_id: patientId,
         patient_name: patientFullName,
         answers: formAnswers,
       }),
     );
 
-    const mlResult = response.data;
-    console.log(`🤖 [ML] Réponse du service ML reçue: ${JSON.stringify(mlResult)}`);
+    const gravityResult = response.data;
+    console.log(`🤖 [Gravity] Réponse du Gravity Service reçue: ${JSON.stringify(gravityResult)}`);
 
     // Generate analysis text from gravity result
     const generateAnalysisText = (result: any): string => {
-      const painLevel = result.features?.pain_level || 'unknown';
-      const temp = result.features?.temperature || 'unknown';
+      const features = result.features || {};
+      const painLevel = features.pain_level || 'unknown';
+      const temp = features.temperature || 'unknown';
+      const spo2 = features.spo2 || 'unknown';
+      const heartRate = features.heart_rate || 'unknown';
       const gravityLevel = result.gravity || 'unknown';
       
-      return `Patient ${patientFullName} assessment completed. Gravity level: ${gravityLevel} (confidence: ${result.confidence}%). ` +
-             `Pain level: ${painLevel}/10, Temperature: ${temp}°C. ` +
-             `Based on the symptoms analysis, the patient requires ${gravityLevel === 'high' || gravityLevel === 'critical' ? 'immediate' : 'routine'} medical attention.`;
+      let analysis = `**Clinical Analysis for ${patientFullName}**\n\n`;
+      
+      // Add major findings
+      const findings: string[] = [];
+      if (features.severe_pain === 1) findings.push(`Severe pain (${painLevel}/10)`);
+      if (features.fever === 1) findings.push(`Fever (${temp}°C)`);
+      if (features.hypoxemia === 1) findings.push(`Low oxygen saturation (${spo2}%)`);
+      if (features.tachycardia === 1) findings.push(`Elevated heart rate (${heartRate} bpm)`);
+      if (features.hypotension === 1) findings.push('Low blood pressure');
+      
+      if (findings.length > 0) {
+        analysis += `**Major Findings:**\n• ${findings.join('\n• ')}\n\n`;
+      } else {
+        analysis += 'No critical vital signs detected in the provided data.\n\n';
+      }
+      
+      analysis += `**Estimated Gravity Level: ${gravityLevel.toUpperCase()}** (confidence: ${result.confidence}%)\n\n`;
+      analysis += `**Recommendations:**\n`;
+      
+      if (gravityLevel === 'critical') {
+        analysis += '- **URGENT** medical evaluation recommended\n- Continuous vital signs monitoring\n- Consider immediate hospitalization';
+      } else if (gravityLevel === 'high') {
+        analysis += '- Close monitoring within 1-2 hours\n- Full re-evaluation recommended';
+      } else if (gravityLevel === 'medium') {
+        analysis += '- Enhanced surveillance\n- Re-check in 4 hours';
+      } else {
+        analysis += '- Standard follow-up according to protocol';
+      }
+      
+      return analysis;
     };
 
     // Extract key findings from features
@@ -93,18 +124,18 @@ async generateFromFormAnswers(
 
     const saved = await this.analysisModel.create({
       patient: patient._id,
-      analysis: generateAnalysisText(mlResult),
-      key_findings: extractKeyFindings(mlResult),
-      gravity: mlResult.gravity?.toLowerCase() ?? 'low',
-      confidence: (mlResult.confidence ?? 0) / 100, // Convert percentage to decimal
+      analysis: generateAnalysisText(gravityResult),
+      key_findings: extractKeyFindings(gravityResult),
+      gravity: gravityResult.gravity?.toLowerCase() ?? 'low',
+      confidence: (gravityResult.confidence ?? 0) / 100, // Convert percentage to decimal
       answers: formAnswers,
-      recommendations: extractRecommendations(mlResult.gravity),
+      recommendations: extractRecommendations(gravityResult.gravity),
     });
 
     return saved;
   } catch (error: any) {
     // On ne bloque pas la soumission du formulaire si le ML échoue
-    console.error('⚠️ ML Analysis failed (non-blocking):', error.message);
+    console.error('⚠️ Gravity Analysis failed (non-blocking):', error.message);
     return null;
   }
 }
