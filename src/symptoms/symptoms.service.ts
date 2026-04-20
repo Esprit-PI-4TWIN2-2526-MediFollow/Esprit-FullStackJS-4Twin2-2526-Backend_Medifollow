@@ -172,6 +172,26 @@ type ScopedStaffUser = {
   department: string | null;
 };
 
+type NormalizedSymptomAnswer = {
+  questionId: string;
+  value: string | number | boolean | string[] | null;
+};
+
+type TodayQuestionStatus = {
+  questionId: string;
+  questionText: string;
+  required: boolean;
+  remainingRequired: number;
+  remainingOptional: number;
+  isBlocked: boolean;
+};
+
+type PatientAssignmentStatus = {
+  _id: string;
+  name: string;
+  isAssigned: boolean;
+};
+
 @Injectable()
 export class SymptomsService {
   private client = new Groq({
@@ -238,6 +258,31 @@ export class SymptomsService {
   async findAll(): Promise<Record<string, unknown>[]> {
     const symptoms = await this.symptomModel.find().sort({ createdAt: -1 }).exec();
     return symptoms.map((symptom) => this.serializeSymptomForm(symptom));
+  }
+
+  async getPatientsWithAssignmentStatus(): Promise<PatientAssignmentStatus[]> {
+    const [patients, activeSymptoms] = await Promise.all([
+      this.findPatientUsers(),
+      this.symptomModel
+        .find({ isActive: true })
+        .select('patientIds patientId')
+        .lean()
+        .exec(),
+    ]);
+
+    const assignedPatientIds = activeSymptoms.flatMap((symptom) =>
+      this.normalizeExistingPatientIds(symptom.patientIds, symptom.patientId),
+    );
+
+    return patients.map((patient) => {
+      const patientId = patient._id.toString();
+
+      return {
+        _id: patientId,
+        name: this.buildUserDisplayName(patient),
+        isAssigned: this.isPatientAssigned(patientId, assignedPatientIds),
+      };
+    });
   }
 
   async findById(id: string): Promise<Record<string, unknown>> {
@@ -402,47 +447,33 @@ export class SymptomsService {
 
     const responseDate = this.normalizeDate(dto.date ? new Date(dto.date) : new Date());
 
-    if (normalizedPatientId) {
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-
-      const todayEnd = new Date();
-      todayEnd.setHours(23, 59, 59, 999);
-
-      const count = await this.symptomResponseModel
-        .countDocuments({
-          patientId: normalizedPatientId,
-          createdAt: {
-            $gte: todayStart,
-            $lte: todayEnd,
-          },
-        })
-        .exec();
-
-      if (count >= 3) {
-        throw new BadRequestException('Maximum 3 submissions per day reached');
-      }
-    }
-
-    const formQuestionIds = new Set(
+    const questionById = new Map(
       symptomForm.questions
         .map((question) => {
           const questionId = (question as Question & { _id?: Types.ObjectId })._id;
-          return questionId?.toString();
+          return questionId ? [questionId.toString(), question] as const : null;
         })
-        .filter(Boolean),
+        .filter((entry): entry is readonly [string, Question] => entry !== null),
     );
 
-    const normalizedAnswers = dto.answers.map((answer, index) => {
+    const submittedQuestionIds = new Set<string>();
+    const normalizedAnswers: NormalizedSymptomAnswer[] = dto.answers.map((answer, index) => {
       if (!answer?.questionId || !isValidObjectId(answer.questionId)) {
         throw new BadRequestException(`Answer ${index + 1}: invalid questionId`);
       }
 
-      if (!formQuestionIds.has(answer.questionId)) {
+      if (!questionById.has(answer.questionId)) {
         throw new BadRequestException(
           `Answer ${index + 1}: questionId does not belong to form ${dto.formId}`,
         );
       }
+
+      if (submittedQuestionIds.has(answer.questionId)) {
+        throw new BadRequestException(
+          `Answer ${index + 1}: duplicate questionId in the same submission`,
+        );
+      }
+      submittedQuestionIds.add(answer.questionId);
 
       return {
         questionId: answer.questionId,
@@ -450,8 +481,17 @@ export class SymptomsService {
       };
     });
 
+    if (normalizedPatientId) {
+      await this.validateDailyQuestionSubmissions(
+        normalizedPatientId,
+        symptomForm,
+        normalizedAnswers,
+        questionById,
+      );
+    }
+
     const response = new this.symptomResponseModel({
-      symptomFormId: new Types.ObjectId(symptomForm.id),
+      symptomFormId: this.getSymptomDocumentObjectId(symptomForm),
       ...(normalizedPatientId ? { patientId: normalizedPatientId } : {}),
       answers: normalizedAnswers,
       date: responseDate,
@@ -634,6 +674,53 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
 
   //fin alerte
 
+
+
+  async getTodayQuestionStatus(patientId: string): Promise<TodayQuestionStatus[]> {
+    const normalizedPatientId = patientId?.trim();
+
+    if (!normalizedPatientId) {
+      throw new BadRequestException('Invalid patientId');
+    }
+
+    const symptomForm = await this.symptomModel
+      .findOne({
+        $or: [
+          { patientIds: normalizedPatientId },
+          { patientId: normalizedPatientId },
+        ],
+        isActive: true,
+      })
+      .sort({ createdAt: -1, _id: -1 })
+      .exec();
+
+    if (!symptomForm) {
+      throw new NotFoundException(`No active symptom form found for patient ${normalizedPatientId}`);
+    }
+
+    const questionIds = symptomForm.questions
+      .map((question) => question._id?.toString())
+      .filter((questionId): questionId is string => !!questionId);
+    const counts = await this.getTodayQuestionCounts(
+      normalizedPatientId,
+      symptomForm,
+      questionIds,
+    );
+
+    return symptomForm.questions
+      .map((question) => {
+        const questionId = question._id?.toString();
+        if (!questionId) {
+          return null;
+        }
+
+        return this.buildTodayQuestionStatus(
+          question,
+          counts.get(questionId) ?? 0,
+        );
+      })
+      .filter((status): status is TodayQuestionStatus => status !== null);
+  }
 
 
   async getTodayResponse(patientId: string): Promise<SymptomResponse | null> {
@@ -975,6 +1062,267 @@ Return raw JSON array only.
 
   // ── Private helpers ───────────────────────────────────────────────────────────
 
+  private async findPatientUsers(): Promise<UserDocument[]> {
+    const patientRoles = await this.roleModel
+      .find({
+        name: {
+          $regex: '^patient$',
+          $options: 'i',
+        },
+      })
+      .select('_id name')
+      .lean()
+      .exec();
+    const patientRoleIds = new Set(
+      patientRoles.map((role) => role._id.toString()),
+    );
+
+    const users = await this.userModel
+      .find()
+      .select('_id firstName lastName email role')
+      .sort({ firstName: 1, lastName: 1, _id: 1 })
+      .exec();
+
+    return users.filter((user) => this.isPatientUser(user, patientRoleIds));
+  }
+
+  private isPatientUser(
+    user: UserDocument,
+    patientRoleIds: Set<string>,
+  ): boolean {
+    const roleValue = user.role as unknown;
+
+    if (!roleValue) {
+      return false;
+    }
+
+    if (typeof roleValue === 'string') {
+      return roleValue.trim().toLowerCase() === 'patient' || patientRoleIds.has(roleValue);
+    }
+
+    if (typeof roleValue === 'object' && 'name' in roleValue) {
+      const roleName = roleValue.name;
+      return typeof roleName === 'string' && roleName.trim().toLowerCase() === 'patient';
+    }
+
+    if (typeof (roleValue as { toString?: () => string }).toString === 'function') {
+      return patientRoleIds.has(roleValue.toString());
+    }
+
+    return false;
+  }
+
+  private isPatientAssigned(patientId: string, assignedPatientIds: string[]): boolean {
+    return assignedPatientIds.some(
+      (assignedId) => patientId.toString() === assignedId.toString(),
+    );
+  }
+
+  private async validateDailyQuestionSubmissions(
+    patientId: string,
+    symptomForm: SymptomDocument,
+    answers: NormalizedSymptomAnswer[],
+    questionById: Map<string, Question>,
+  ): Promise<void> {
+    const today = new Date();
+    const dayRange = {
+      $gte: this.getStartOfDay(today),
+      $lt: this.getEndOfDay(today),
+    };
+    const maxAttempts = Math.max(
+      ...(symptomForm.questions ?? []).map((question) =>
+        this.coerceStoredOccurrenceLimit(
+          (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
+          1,
+        ),
+      ),
+      1,
+    );
+
+    const totalSubmissionsToday = await this.symptomResponseModel.countDocuments({
+      patientId,
+      createdAt: dayRange,
+    });
+
+    if (totalSubmissionsToday >= maxAttempts) {
+      throw new BadRequestException(
+        `Maximum submissions (${maxAttempts}) reached for today`,
+      );
+    }
+
+    for (const answer of answers) {
+      const question = questionById.get(answer.questionId);
+      if (!question) {
+        continue;
+      }
+
+      const limit = this.coerceStoredOccurrenceLimit(
+        (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
+        1,
+      );
+      const rawTodayCount = await this.symptomResponseModel.countDocuments({
+        patientId,
+        createdAt: dayRange,
+        'answers.questionId': question._id?.toString() ?? answer.questionId,
+      });
+      const todayCount = Number.isFinite(rawTodayCount) ? Number(rawTodayCount) : 0;
+      const isLimitReached = todayCount >= limit;
+
+      console.log(
+        'CHECK:',
+        question.label,
+        'count:',
+        todayCount,
+        'limit:',
+        limit,
+        'limitReached:',
+        isLimitReached,
+      );
+
+      if (!isLimitReached && question.required && this.isAnswerEmpty(answer.value)) {
+        throw new BadRequestException(
+          `${question.label} is required`,
+        );
+      }
+    }
+  }
+
+  private isAnswerEmpty(value: NormalizedSymptomAnswer['value']): boolean {
+    if (value === null || value === undefined) {
+      return true;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim() === '';
+    }
+
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+
+    return false;
+  }
+
+  private async getTodayQuestionCounts(
+    patientId: string,
+    symptomForm: SymptomDocument,
+    questionIds: string[],
+  ): Promise<Map<string, number>> {
+    const uniqueQuestionIds = questionIds.filter(
+      (questionId, index, array) => array.indexOf(questionId) === index,
+    );
+    const counts = new Map(uniqueQuestionIds.map((questionId) => [questionId, 0]));
+
+    if (uniqueQuestionIds.length === 0) {
+      return counts;
+    }
+
+    const today = new Date();
+    const responses = await this.symptomResponseModel
+      .find({
+        patientId,
+        symptomFormId: this.getSymptomDocumentObjectId(symptomForm),
+        createdAt: {
+          $gte: this.getStartOfDay(today),
+          $lt: this.getEndOfDay(today),
+        },
+        'answers.questionId': { $in: uniqueQuestionIds },
+      })
+      .select('answers')
+      .lean()
+      .exec();
+
+    for (const response of responses as Array<{ answers?: Array<{ questionId?: string }> }>) {
+      const answeredQuestionIds = new Set(
+        (response.answers ?? [])
+          .map((answer) => answer.questionId)
+          .filter(
+            (questionId): questionId is string =>
+              typeof questionId === 'string' && counts.has(questionId),
+          ),
+      );
+
+      for (const questionId of answeredQuestionIds) {
+        counts.set(questionId, (counts.get(questionId) ?? 0) + 1);
+      }
+    }
+
+    return counts;
+  }
+
+  private buildTodayQuestionStatus(
+    question: Question,
+    count: number,
+  ): TodayQuestionStatus {
+    const questionId = question._id?.toString() ?? '';
+    const { occurrencesPerDay, maxOccurrencesPerDay } = this.getQuestionOccurrenceConfig(question);
+
+    return {
+      questionId,
+      questionText: question.label,
+      required: count < occurrencesPerDay,
+      remainingRequired: Math.max(occurrencesPerDay - count, 0),
+      remainingOptional: Math.max(
+        maxOccurrencesPerDay - Math.max(count, occurrencesPerDay),
+        0,
+      ),
+      isBlocked: count >= maxOccurrencesPerDay,
+    };
+  }
+
+  private getQuestionOccurrenceConfig(question: Question): {
+    occurrencesPerDay: number;
+    maxOccurrencesPerDay: number;
+  } {
+    const limit = this.coerceStoredOccurrenceLimit(
+      (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
+      this.coerceStoredOccurrenceLimit(question.occurrencesPerDay, question.required ? 1 : 0),
+    );
+
+    return {
+      occurrencesPerDay: limit,
+      maxOccurrencesPerDay: limit,
+    };
+  }
+
+  private normalizeOccurrenceLimit(
+    value: unknown,
+    fallback: number,
+    fieldName: string,
+    questionIndex: number,
+  ): number {
+    const parsedValue = value === undefined || value === null ? fallback : value;
+
+    if (
+      typeof parsedValue !== 'number' ||
+      !Number.isInteger(parsedValue) ||
+      parsedValue < 0
+    ) {
+      throw new BadRequestException(
+        `Question ${questionIndex + 1}: ${fieldName} must be a non-negative integer`,
+      );
+    }
+
+    return parsedValue;
+  }
+
+  private coerceStoredOccurrenceLimit(value: unknown, fallback: number): number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0
+      ? value
+      : fallback;
+  }
+
+  private getSymptomDocumentObjectId(symptomForm: SymptomDocument): Types.ObjectId {
+    const rawId = (symptomForm as SymptomDocument & { id?: string })._id ?? symptomForm.id;
+    const id = rawId?.toString();
+
+    if (!id || !isValidObjectId(id)) {
+      throw new BadRequestException('Invalid symptom form id');
+    }
+
+    return new Types.ObjectId(id);
+  }
+
   private normalizeQuestions(questions: CreateQuestionDto[]): Question[] {
     if (!Array.isArray(questions)) {
       throw new BadRequestException('questions must be an array');
@@ -994,11 +1342,34 @@ Return raw JSON array only.
             .filter((option): option is string => !!option)
         : [];
 
+      const occurrencesPerDay = this.normalizeOccurrenceLimit(
+        question.occurrencesPerDay ?? question.measurementsPerDay,
+        question.required ? 1 : 0,
+        'occurrencesPerDay',
+        index,
+      );
+      const measurementsPerDay = this.normalizeOccurrenceLimit(
+        question.measurementsPerDay ?? question.occurrencesPerDay,
+        occurrencesPerDay,
+        'measurementsPerDay',
+        index,
+      );
+      const normalizedLimit = this.normalizeOccurrenceLimit(
+        measurementsPerDay,
+        occurrencesPerDay,
+        'measurementsPerDay',
+        index,
+      );
+      const maxOccurrencesPerDay = normalizedLimit;
+
       return {
         label:    question.label.trim(),
         type:     question.type.trim() as QuestionType,
         order:    question.order ?? index,
         required: question.required ?? false,
+        occurrencesPerDay: normalizedLimit,
+        measurementsPerDay: normalizedLimit,
+        maxOccurrencesPerDay,
         options,
         ...(question.validation ? { validation: question.validation } : {}),
         ...(question.category ? { category: question.category as QuestionCategory } : {}),
@@ -1539,21 +1910,75 @@ Return raw JSON array only.
     return this.normalizeExistingPatientIds(symptom.patientIds, symptom.patientId);
   }
 
-  private normalizeExistingPatientIds(patientIds?: string[], patientId?: string): string[] {
+  private normalizeExistingPatientIds(patientIds?: unknown[], patientId?: unknown): string[] {
     return [
       ...(Array.isArray(patientIds) ? patientIds : []),
-      ...(typeof patientId === 'string' && patientId.trim() ? [patientId.trim()] : []),
-    ].filter((value, index, array): value is string => !!value && array.indexOf(value) === index);
+      patientId,
+    ]
+      .map((value) => this.normalizePatientIdValue(value))
+      .filter((value, index, array): value is string => !!value && array.indexOf(value) === index);
+  }
+
+  private normalizePatientIdValue(value: unknown): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim() || null;
+    }
+
+    if (typeof (value as { toString?: () => string }).toString === 'function') {
+      const stringValue = value.toString().trim();
+      return stringValue && stringValue !== '[object Object]' ? stringValue : null;
+    }
+
+    return null;
   }
 
   private serializeSymptomForm(symptom: SymptomDocument): Record<string, unknown> {
     const serialized = symptom.toObject();
     const patientIds = this.normalizeExistingPatientIds(serialized.patientIds, serialized.patientId);
     const { patientId, ...rest } = serialized;
+    const questions = Array.isArray(rest.questions)
+      ? rest.questions.map((question) => {
+          const normalizedLimit = this.coerceStoredOccurrenceLimit(
+            question.measurementsPerDay,
+            this.coerceStoredOccurrenceLimit(
+              question.occurrencesPerDay,
+              this.coerceStoredOccurrenceLimit(question.maxOccurrencesPerDay, 1),
+            ),
+          );
+          const occurrencesPerDay = this.coerceStoredOccurrenceLimit(
+            question.occurrencesPerDay,
+            normalizedLimit,
+          );
+          const measurementsPerDay = this.coerceStoredOccurrenceLimit(
+            question.measurementsPerDay,
+            occurrencesPerDay,
+          );
+          const maxOccurrencesPerDay = this.coerceStoredOccurrenceLimit(
+            question.maxOccurrencesPerDay,
+            occurrencesPerDay,
+          );
+          const syncedLimit = this.coerceStoredOccurrenceLimit(
+            measurementsPerDay,
+            this.coerceStoredOccurrenceLimit(occurrencesPerDay, maxOccurrencesPerDay),
+          );
+
+          return {
+            ...question,
+            occurrencesPerDay: syncedLimit,
+            measurementsPerDay: syncedLimit,
+            maxOccurrencesPerDay: syncedLimit,
+          };
+        })
+      : [];
 
     return {
       ...rest,
       patientIds,
+      questions,
       status: serialized.status ?? (serialized.isActive ? 'active' : 'inactive'),
     };
   }

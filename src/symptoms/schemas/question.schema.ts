@@ -37,6 +37,15 @@ export class Question {
   @Prop({ required: false, default: false })
   required: boolean;
 
+  @Prop({ required: true, default: 0, min: 0 })
+  occurrencesPerDay: number;
+
+  @Prop({ required: true, default: 1, min: 0 })
+  measurementsPerDay: number;
+
+  @Prop({ required: true, min: 0 })
+  maxOccurrencesPerDay: number;
+
   @Prop({ type: [String], required: false, default: [] })
   options: string[];
 
