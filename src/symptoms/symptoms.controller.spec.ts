@@ -24,6 +24,7 @@ describe('SymptomsController', () => {
     service = {
       create: jest.fn(),
       findAll: jest.fn(),
+      getPatientsWithAssignmentStatus: jest.fn(),
       getLatestActive: jest.fn(),
       findFormByPatient: jest.fn(),
       findById: jest.fn(),
@@ -32,6 +33,7 @@ describe('SymptomsController', () => {
       saveResponse: jest.fn(),
       getResponsesForValidation: jest.fn(),
       getTodayResponse: jest.fn(),
+      getTodayQuestionStatus: jest.fn(),
       getByDate: jest.fn(),
       getPatientResponses: jest.fn(),
       getNurseResponses: jest.fn(),
@@ -83,6 +85,20 @@ describe('SymptomsController', () => {
 
     expect(controller.findAll()).toBe(expected);
     expect(service.findAll).toHaveBeenCalledWith();
+  });
+
+  it('should list patients with assignment status', () => {
+    const expected = [
+      {
+        _id: patientId,
+        name: 'Patient One',
+        isAssigned: false,
+      },
+    ];
+    service.getPatientsWithAssignmentStatus.mockReturnValue(expected);
+
+    expect(controller.getPatientsWithAssignmentStatus()).toBe(expected);
+    expect(service.getPatientsWithAssignmentStatus).toHaveBeenCalledWith();
   });
 
   it('should get the latest active form', () => {
@@ -152,6 +168,23 @@ describe('SymptomsController', () => {
 
     expect(controller.getTodayResponse(patientId)).toBe(expected);
     expect(service.getTodayResponse).toHaveBeenCalledWith(patientId);
+  });
+
+  it("should get today's question status for a patient", () => {
+    const expected = [
+      {
+        questionId: new Types.ObjectId().toString(),
+        questionText: 'Pain level',
+        required: true,
+        remainingRequired: 1,
+        remainingOptional: 1,
+        isBlocked: false,
+      },
+    ];
+    service.getTodayQuestionStatus.mockReturnValue(expected);
+
+    expect(controller.getTodayQuestionStatus(patientId)).toBe(expected);
+    expect(service.getTodayQuestionStatus).toHaveBeenCalledWith(patientId);
   });
 
   it('should get responses by date for the authenticated user', () => {

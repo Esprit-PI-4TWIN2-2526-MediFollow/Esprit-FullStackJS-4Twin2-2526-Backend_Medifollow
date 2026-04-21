@@ -11,6 +11,7 @@ import { User, UserDocument } from '../users/users.schema';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
 import { TelemedicineNotificationService } from './telemedicine-notification.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ConsultationService {
@@ -20,6 +21,7 @@ export class ConsultationService {
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
     private notificationService: TelemedicineNotificationService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(dto: CreateConsultationDto): Promise<Consultation> {
@@ -61,6 +63,29 @@ export class ConsultationService {
       );
     } catch (error) {
       console.error('Error sending consultation notification:', error);
+    }
+
+    // Créer notification in-app pour le patient
+    try {
+      await this.notificationsService.create({
+        recipientId: dto.patientId,
+        type: 'appointment',
+        priority: dto.type === 'urgent' ? 'high' : 'medium',
+        title: 'Consultation Scheduled',
+        message: `Your consultation with Dr. ${doctor.firstName} ${doctor.lastName} has been scheduled`,
+        data: {
+          consultationId: consultation._id.toString(),
+          scheduledAt: dto.scheduledAt,
+          type: dto.type || 'scheduled',
+          reason: dto.reason,
+          doctorName: `${doctor.firstName} ${doctor.lastName}`,
+        },
+        patientId: dto.patientId,
+        actionUrl: `/telemedicine/consultation/${consultation._id}`,
+      });
+      console.log(`📬 Consultation notification created for patient ${dto.patientId}`);
+    } catch (notifError) {
+      console.error('Error creating patient consultation notification:', notifError);
     }
 
     return consultation;

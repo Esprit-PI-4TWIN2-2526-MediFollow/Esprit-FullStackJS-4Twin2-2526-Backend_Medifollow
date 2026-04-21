@@ -26,6 +26,7 @@ import { ChatModule } from './communication/chat.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { TelemedicineModule } from './telemedicine/telemedicine.module';
 import { AuditorModule } from './auditor/auditor.module';
+import { NotificationsModule } from './notifications/notifications.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -66,6 +67,7 @@ import { AuditorModule } from './auditor/auditor.module';
     MetricsModule,
     TelemedicineModule,
     AuditorModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
