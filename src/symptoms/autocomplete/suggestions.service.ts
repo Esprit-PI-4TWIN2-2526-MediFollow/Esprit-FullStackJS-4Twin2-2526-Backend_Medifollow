@@ -43,38 +43,37 @@ export class SuggestionsService {
       throw new NotFoundException('Patient not found');
     }
 
-    // Préparer le contexte pour l'IA
     const context = this.buildValidationContext(response, patient, patientContext);
 
     const prompt = `
-Vous êtes un coordinateur médical expérimenté qui doit rédiger des notes de validation pour les soumissions de symptômes des patients.
+You are an experienced medical coordinator writing validation notes for patient symptom submissions.
 
-CONTEXTE PATIENT:
-- Nom: ${patient.firstName} ${patient.lastName}
-- Département: ${patient.assignedDepartment || department}
-- Email: ${patient.email || 'Non spécifié'}
+PATIENT CONTEXT:
+- Name: ${patient.firstName} ${patient.lastName}
+- Department: ${patient.assignedDepartment || department}
+- Email: ${patient.email || 'Not specified'}
 
-SOUMISSION DES SYMPTÔMES:
+SYMPTOM SUBMISSION:
 - Date: ${response.createdAt?.toLocaleDateString() || 'N/A'}
 - Vitals: ${JSON.stringify(response.vitals, null, 2)}
 
-RÉPONSES AUX SYMPTÔMES:
-${response.answers.map((a, i) => `- ${a.questionId}: ${JSON.stringify(a.value)}`).join('\n')}
+SYMPTOM ANSWERS:
+${response.answers.map((a) => `- ${a.questionId}: ${JSON.stringify(a.value)}`).join('\n')}
 
-${patientContext ? `CONTEXTE SUPPLÉMENTAIRE: ${patientContext}` : ''}
+${patientContext ? `ADDITIONAL CONTEXT: ${patientContext}` : ''}
 
-TÂCHE: Générez EXACTEMENT 5 suggestions de notes de validation professionnelles, concises et pertinentes pour cette soumission.
+TASK: Generate EXACTLY 5 professional, concise, and relevant validation note suggestions for this submission.
 
-RÈGLES:
-1. Chaque suggestion doit être une phrase complète de 10-30 mots
-2. Être spécifique aux symptômes présentés
-3. Inclure des recommandations cliniques pertinentes
-4. Utiliser un ton professionnel mais accessible
-5. Si des vitaux anormaux sont détectés, suggérer des actions spécifiques
+RULES:
+1. Each suggestion must be a complete sentence of 10-30 words
+2. Be specific to the symptoms presented
+3. Include relevant clinical recommendations
+4. Use a professional yet accessible tone
+5. If abnormal vitals are detected, suggest specific actions
 
-FORMAT DE RÉPONSE: Retournez UNIQUEMENT un tableau JSON de 5 strings, sans markdown, sans backticks.
+RESPONSE FORMAT: Return ONLY a JSON array of 5 strings, no markdown, no backticks.
 
-Exemple de format: ["Suggestion 1", "Suggestion 2", "Suggestion 3", "Suggestion 4", "Suggestion 5"]
+Example format: ["Suggestion 1", "Suggestion 2", "Suggestion 3", "Suggestion 4", "Suggestion 5"]
 `;
 
     try {
@@ -83,14 +82,14 @@ Exemple de format: ["Suggestion 1", "Suggestion 2", "Suggestion 3", "Suggestion 
         temperature: 0.7,
         max_tokens: 500,
         messages: [
-          { role: 'system', content: 'Vous êtes un assistant médical professionnel générant des suggestions de validation.' },
+          { role: 'system', content: 'You are a professional medical assistant generating validation suggestions.' },
           { role: 'user', content: prompt },
         ],
       });
 
       const raw = completion.choices[0]?.message?.content?.trim() || '';
       const jsonMatch = raw.match(/\[[\s\S]*\]/);
-      
+
       if (jsonMatch) {
         const suggestions = JSON.parse(jsonMatch[0]);
         if (Array.isArray(suggestions) && suggestions.length === 5) {
@@ -105,110 +104,108 @@ Exemple de format: ["Suggestion 1", "Suggestion 2", "Suggestion 3", "Suggestion 
     }
   }
 
- // suggestions.service.ts
-async getRealTimeSuggestions(
+  async getRealTimeSuggestions(
     partialNote: string,
     responseId: string,
     department: string,
-): Promise<{ completions: string[]; medicalTerms: string[] }> {
+  ): Promise<{ completions: string[]; medicalTerms: string[] }> {
     if (!partialNote || partialNote.length < 3) {
-        return { completions: [], medicalTerms: [] };
+      return { completions: [], medicalTerms: [] };
     }
 
-    // ← Ne plus bloquer si responseId invalide
     if (responseId && isValidObjectId(responseId)) {
-        const response = await this.symptomResponseModel.findById(responseId).exec();
-        if (!response) {
-            console.warn('[Suggestions] responseId non trouvé:', responseId);
-            // Continuer quand même avec les termes médicaux
-        }
+      const response = await this.symptomResponseModel.findById(responseId).exec();
+      if (!response) {
+        console.warn('[Suggestions] responseId not found:', responseId);
+      }
     }
 
     const medicalTermsByDepartment: Record<string, string[]> = {
-        Cardiology: ['tachycardie', 'bradycardie', 'hypertension', 'hypotension', 'palpitations', 'œdème', 'syncope', 'arythmie'],
-        Neurology: ['céphalée', 'vertiges', 'paresthésie', 'ataxie', 'aphasie', 'tremblements', 'épilepsie', 'migraine'],
-        Pediatrics: ['fièvre', 'déshydratation', 'éruption cutanée', 'convulsions', 'toux', 'vomissements', 'diarrhée'],
-        Oncology: ['neutropénie', 'anémie', 'thrombocytopénie', 'mucite', 'alopécie', 'cachexie', 'douleur neuropathique'],
-        Surgery: ['suppuration', 'déhiscence', 'hématome', 'sérome', 'infection nosocomiale', 'cicatrisation'],
-        Orthopedics: ['immobilisation', 'mobilisation', 'rééducation', 'œdème', 'hématome', 'douleur mécanique'],
-        General: ['douleur', 'fièvre', 'infection', 'inflammation', 'traitement', 'médicament', 'suivi', 'observation'],
+      Cardiology: ['tachycardia', 'bradycardia', 'hypertension', 'hypotension', 'palpitations', 'edema', 'syncope', 'arrhythmia'],
+      Neurology: ['headache', 'dizziness', 'paresthesia', 'ataxia', 'aphasia', 'tremors', 'epilepsy', 'migraine'],
+      Pediatrics: ['fever', 'dehydration', 'skin rash', 'seizures', 'cough', 'vomiting', 'diarrhea'],
+      Oncology: ['neutropenia', 'anemia', 'thrombocytopenia', 'mucositis', 'alopecia', 'cachexia', 'neuropathic pain'],
+      Surgery: ['suppuration', 'dehiscence', 'hematoma', 'seroma', 'nosocomial infection', 'wound healing'],
+      Orthopedics: ['immobilization', 'mobilization', 'rehabilitation', 'edema', 'hematoma', 'mechanical pain'],
+      General: ['pain', 'fever', 'infection', 'inflammation', 'treatment', 'medication', 'follow-up', 'observation'],
     };
 
-    const defaultTerms = ['douleur', 'fièvre', 'infection', 'inflammation', 'traitement', 'médicament', 'suivi', 'observation'];
+    const defaultTerms = ['pain', 'fever', 'infection', 'inflammation', 'treatment', 'medication', 'follow-up', 'observation'];
     const departmentTerms = medicalTermsByDepartment[department] || defaultTerms;
 
     const lastWord = partialNote.trim().split(' ').pop()?.toLowerCase() || '';
     const matchingTerms = lastWord.length >= 2
-        ? departmentTerms.filter(term => term.toLowerCase().startsWith(lastWord))
-        : [];
+      ? departmentTerms.filter(term => term.toLowerCase().startsWith(lastWord))
+      : [];
 
     let completions: string[] = [];
 
     if (partialNote.length >= 5) {
-        const completionPrompt = `Complétez cette phrase médicale (retournez UNIQUEMENT 3 suites possibles séparées par |, sans répéter le début):
+      const completionPrompt = `Complete this medical phrase (return ONLY 3 possible continuations separated by |, do not repeat the beginning):
 "${partialNote}"
-Format: suite1|suite2|suite3`;
+Format: continuation1|continuation2|continuation3`;
 
-        try {
-            const completion = await this.client.chat.completions.create({
-                model: 'llama-3.3-70b-versatile',
-                temperature: 0.5,
-                max_tokens: 100,
-                messages: [
-                    { role: 'system', content: 'Assistant médical. Réponds uniquement avec des suites de phrases courtes séparées par |.' },
-                    { role: 'user', content: completionPrompt },
-                ],
-            });
+      try {
+        const completion = await this.client.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
+          temperature: 0.5,
+          max_tokens: 100,
+          messages: [
+            { role: 'system', content: 'Medical assistant. Reply only with short phrase continuations separated by |.' },
+            { role: 'user', content: completionPrompt },
+          ],
+        });
 
-            const raw = completion.choices[0]?.message?.content?.trim() || '';
-            console.log('[Suggestions] Raw completions:', raw);
-            completions = raw.split('|').map(s => s.trim()).filter(s => s.length > 0).slice(0, 3);
-        } catch (error) {
-            console.error('Error generating completions:', error);
-        }
+        const raw = completion.choices[0]?.message?.content?.trim() || '';
+        console.log('[Suggestions] Raw completions:', raw);
+        completions = raw.split('|').map(s => s.trim()).filter(s => s.length > 0).slice(0, 3);
+      } catch (error) {
+        console.error('Error generating completions:', error);
+      }
     }
 
     return {
-        completions,
-        medicalTerms: matchingTerms.slice(0, 5),
+      completions,
+      medicalTerms: matchingTerms.slice(0, 5),
     };
-}
+  }
+
   private buildValidationContext(
     response: SymptomResponseDocument,
     patient: UserDocument,
     additionalContext?: string,
   ): string {
     const abnormalVitals: string[] = [];
-    
+
     if (response.vitals) {
       if (response.vitals.heartRate && (response.vitals.heartRate > 100 || response.vitals.heartRate < 60)) {
-        abnormalVitals.push(`fréquence cardiaque ${response.vitals.heartRate} bpm (anormal)`);
+        abnormalVitals.push(`heart rate ${response.vitals.heartRate} bpm (abnormal)`);
       }
       if (response.vitals.temperature && response.vitals.temperature > 37.5) {
-        abnormalVitals.push(`température ${response.vitals.temperature}°C (fièvre)`);
+        abnormalVitals.push(`temperature ${response.vitals.temperature}°C (fever)`);
       }
       if (response.vitals.bloodPressure) {
         const [systolic, diastolic] = response.vitals.bloodPressure.split('/');
         if (parseInt(systolic) > 140 || parseInt(diastolic) > 90) {
-          abnormalVitals.push(`tension artérielle ${response.vitals.bloodPressure} (hypertension)`);
+          abnormalVitals.push(`blood pressure ${response.vitals.bloodPressure} (hypertension)`);
         }
       }
     }
 
     return `
-Anomalies détectées: ${abnormalVitals.length > 0 ? abnormalVitals.join(', ') : 'Aucune anomalie majeure'}
-Statut validation: ${response.validated ? 'Déjà validé' : 'En attente de validation'}
-${additionalContext ? `Note additionnelle: ${additionalContext}` : ''}
+Detected anomalies: ${abnormalVitals.length > 0 ? abnormalVitals.join(', ') : 'No major anomalies detected'}
+Validation status: ${response.validated ? 'Already validated' : 'Pending validation'}
+${additionalContext ? `Additional note: ${additionalContext}` : ''}
     `;
   }
 
   private getFallbackSuggestions(): string[] {
     return [
-      "Symptômes typiques de la pathologie, évolution favorable. Continuer surveillance à domicile.",
-      "Présentation clinique cohérente. Pas de signes de gravité. Suivi standard recommandé.",
-      "Patient stable cliniquement. Respecter le protocole de suivi établi.",
-      "Symptômes contrôlés par traitement actuel. Maintenir la prise en charge actuelle.",
-      "Absence de signes d'alarme. Programmer consultation de contrôle dans 7 jours.",
+      "Symptoms consistent with known pathology, favorable progression. Continue home monitoring.",
+      "Clinical presentation coherent. No signs of severity. Standard follow-up recommended.",
+      "Patient clinically stable. Follow the established monitoring protocol.",
+      "Symptoms controlled by current treatment. Maintain current management plan.",
+      "No warning signs detected. Schedule a follow-up consultation within 7 days.",
     ];
   }
 }

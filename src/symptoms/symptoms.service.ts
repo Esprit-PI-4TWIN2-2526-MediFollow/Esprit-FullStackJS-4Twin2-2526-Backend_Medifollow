@@ -929,6 +929,7 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
 
   //   return this.formatNurseResponse(response, patient);
   // }
+
 async validateResponse(
   authUser: AuthUserPayload,
   responseId: string,
@@ -942,20 +943,17 @@ async validateResponse(
     throw new ConflictException('Response already validated');
   }
 
-  // ✅ Vérifier que le département n'est pas null
   if (!staff.department) {
     throw new ForbiddenException('No department assigned to user');
   }
 
-  // ✨ Générer des suggestions si demandé
   if (dto.generateSuggestions) {
     const suggestions = await this.suggestionsService.generateValidationSuggestions(
       responseId,
-      staff.department, // Maintenant staff.department est garanti non-null
+      staff.department,
       dto.patientContext,
     );
-    
-    // Émettre les suggestions via WebSocket
+
     if (dto.socketId) {
       this.suggestionsGateway?.server?.to(dto.socketId).emit('suggestions-generated', {
         responseId,
@@ -963,15 +961,13 @@ async validateResponse(
         timestamp: new Date(),
       });
     }
-    
-    // Retourner les suggestions sans valider
+
     return {
       ...this.formatNurseResponse(response, patient),
       suggestions,
     } as any;
   }
 
-  // Validation normale
   response.validated = true;
   response.validatedBy = staff.user._id.toString();
   response.validatedByName = this.buildUserDisplayName(staff.user);
@@ -979,7 +975,6 @@ async validateResponse(
   response.validatedAt = new Date();
   response.validationNote = dto.note?.trim() ?? '';
 
-  // ✨ Enrichir la note avec l'IA si demandé
   if (dto.enhanceWithAI && dto.note) {
     const enhancedNote = await this.enhanceValidationNote(dto.note, response, patient);
     response.validationNote = enhancedNote;
@@ -987,7 +982,6 @@ async validateResponse(
 
   await response.save();
 
-  // ✨ Notifier via WebSocket
   if (dto.socketId) {
     this.suggestionsGateway?.server?.to(dto.socketId).emit('response-validated', {
       responseId,
@@ -1007,14 +1001,11 @@ private async enhanceValidationNote(
   patient: UserDocument,
 ): Promise<string> {
   const prompt = `
-Améliorez cette note de validation médicale en gardant le sens original mais en la rendant plus professionnelle et précise:
-
-Note originale: "${originalNote}"
-
-Contexte patient: ${patient.firstName} ${patient.lastName}
-Département: ${patient.assignedDepartment}
-
-Réponse améliorée (une seule phrase, ton professionnel):
+Improve this medical validation note while keeping the original meaning, making it more professional and precise:
+Original note: "${originalNote}"
+Patient context: ${patient.firstName} ${patient.lastName}
+Department: ${patient.assignedDepartment}
+Improved response (single sentence, professional tone):
 `;
 
   try {
@@ -1023,7 +1014,7 @@ Réponse améliorée (une seule phrase, ton professionnel):
       temperature: 0.5,
       max_tokens: 150,
       messages: [
-        { role: 'system', content: 'Vous êtes un rédacteur médical professionnel.' },
+        { role: 'system', content: 'You are a professional medical writer.' },
         { role: 'user', content: prompt },
       ],
     });
