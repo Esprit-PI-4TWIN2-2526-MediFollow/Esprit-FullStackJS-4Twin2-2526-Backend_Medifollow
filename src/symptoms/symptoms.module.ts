@@ -8,9 +8,11 @@ import { User, UserSchema } from 'src/users/users.schema';
 import { Role, RoleSchema } from 'src/role/schemas/role.schema';
 import { AlertModule } from 'src/alert/alert.module';
 import { AiAnalysisModule } from 'src/ai-analysis/ai-analysis.module';
+import { SuggestionsModule } from './autocomplete/suggestions.module';
 
 @Module({
   imports: [
+    SuggestionsModule,
     MongooseModule.forFeature([
       { name: Symptom.name, schema: SymptomSchema },
       { name: SymptomResponse.name, schema: SymptomResponseSchema },

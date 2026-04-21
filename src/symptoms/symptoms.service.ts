@@ -1,3 +1,4 @@
+import { SuggestionsService } from './autocomplete/suggestions.service';
 import {
   BadRequestException,
   ConflictException,
@@ -22,6 +23,7 @@ import { User, UserDocument } from 'src/users/users.schema';
 import { Role, RoleDocument } from 'src/role/schemas/role.schema';
 import { AlertsService } from 'src/alert/alerts.service';
 import { AnalysisService } from 'src/ai-analysis/analysis.service';
+import { SuggestionsGateway } from './autocomplete/suggestions.gateway';
 
 // ── Mapping: medical service → clinical focus areas ──────────────────────────
 //
@@ -172,6 +174,7 @@ type ScopedStaffUser = {
   department: string | null;
 };
 
+
 @Injectable()
 export class SymptomsService {
   private client = new Groq({
@@ -189,6 +192,8 @@ export class SymptomsService {
     private roleModel: Model<RoleDocument>,
     private readonly alertsService: AlertsService,   // ← Injection du service d'alertes
     private readonly analysisService: AnalysisService, // ← Injection du service d'analyse AI
+ private readonly suggestionsService: SuggestionsService,
+    private readonly suggestionsGateway: SuggestionsGateway,
   ) {}
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -780,31 +785,136 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
     return this.formatNurseResponse(response, patient);
   }
 
-  async validateResponse(
-    authUser: AuthUserPayload,
-    responseId: string,
-    dto: ResponseActionDto,
-  ): Promise<NurseVisibleResponseItem> {
-    const staff = await this.getScopedStaffUser(authUser, ['nurse', 'coordinator']);
-    const response = await this.findVisibleResponse(responseId, staff.department);
-    const patient = await this.getPatientForVisibleResponse(response, staff.department);
+  // async validateResponse(
+  //   authUser: AuthUserPayload,
+  //   responseId: string,
+  //   dto: ResponseActionDto,
+  // ): Promise<NurseVisibleResponseItem> {
+  //   const staff = await this.getScopedStaffUser(authUser, ['nurse', 'coordinator']);
+  //   const response = await this.findVisibleResponse(responseId, staff.department);
+  //   const patient = await this.getPatientForVisibleResponse(response, staff.department);
 
-    if (response.validated) {
-      throw new ConflictException('Response already validated');
-    }
+  //   if (response.validated) {
+  //     throw new ConflictException('Response already validated');
+  //   }
 
-    response.validated = true;
-    response.validatedBy = staff.user._id.toString();
-    response.validatedByName = this.buildUserDisplayName(staff.user);
-    response.validatedByRole = staff.roleName;
-    response.validatedAt = new Date();
-    response.validationNote = dto.note?.trim() ?? '';
+  //   response.validated = true;
+  //   response.validatedBy = staff.user._id.toString();
+  //   response.validatedByName = this.buildUserDisplayName(staff.user);
+  //   response.validatedByRole = staff.roleName;
+  //   response.validatedAt = new Date();
+  //   response.validationNote = dto.note?.trim() ?? '';
 
-    await response.save();
+  //   await response.save();
 
-    return this.formatNurseResponse(response, patient);
+  //   return this.formatNurseResponse(response, patient);
+  // }
+async validateResponse(
+  authUser: AuthUserPayload,
+  responseId: string,
+  dto: ResponseActionDto,
+): Promise<NurseVisibleResponseItem> {
+  const staff = await this.getScopedStaffUser(authUser, ['nurse', 'coordinator']);
+  const response = await this.findVisibleResponse(responseId, staff.department);
+  const patient = await this.getPatientForVisibleResponse(response, staff.department);
+
+  if (response.validated) {
+    throw new ConflictException('Response already validated');
   }
 
+  // ✅ Vérifier que le département n'est pas null
+  if (!staff.department) {
+    throw new ForbiddenException('No department assigned to user');
+  }
+
+  // ✨ Générer des suggestions si demandé
+  if (dto.generateSuggestions) {
+    const suggestions = await this.suggestionsService.generateValidationSuggestions(
+      responseId,
+      staff.department, // Maintenant staff.department est garanti non-null
+      dto.patientContext,
+    );
+    
+    // Émettre les suggestions via WebSocket
+    if (dto.socketId) {
+      this.suggestionsGateway?.server?.to(dto.socketId).emit('suggestions-generated', {
+        responseId,
+        suggestions,
+        timestamp: new Date(),
+      });
+    }
+    
+    // Retourner les suggestions sans valider
+    return {
+      ...this.formatNurseResponse(response, patient),
+      suggestions,
+    } as any;
+  }
+
+  // Validation normale
+  response.validated = true;
+  response.validatedBy = staff.user._id.toString();
+  response.validatedByName = this.buildUserDisplayName(staff.user);
+  response.validatedByRole = staff.roleName;
+  response.validatedAt = new Date();
+  response.validationNote = dto.note?.trim() ?? '';
+
+  // ✨ Enrichir la note avec l'IA si demandé
+  if (dto.enhanceWithAI && dto.note) {
+    const enhancedNote = await this.enhanceValidationNote(dto.note, response, patient);
+    response.validationNote = enhancedNote;
+  }
+
+  await response.save();
+
+  // ✨ Notifier via WebSocket
+  if (dto.socketId) {
+    this.suggestionsGateway?.server?.to(dto.socketId).emit('response-validated', {
+      responseId,
+      validatedBy: staff.user._id.toString(),
+      validatedByName: this.buildUserDisplayName(staff.user),
+      validatedAt: response.validatedAt,
+      note: response.validationNote,
+    });
+  }
+
+  return this.formatNurseResponse(response, patient);
+}
+
+private async enhanceValidationNote(
+  originalNote: string,
+  response: SymptomResponseDocument,
+  patient: UserDocument,
+): Promise<string> {
+  const prompt = `
+Améliorez cette note de validation médicale en gardant le sens original mais en la rendant plus professionnelle et précise:
+
+Note originale: "${originalNote}"
+
+Contexte patient: ${patient.firstName} ${patient.lastName}
+Département: ${patient.assignedDepartment}
+
+Réponse améliorée (une seule phrase, ton professionnel):
+`;
+
+  try {
+    const completion = await this.client.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.5,
+      max_tokens: 150,
+      messages: [
+        { role: 'system', content: 'Vous êtes un rédacteur médical professionnel.' },
+        { role: 'user', content: prompt },
+      ],
+    });
+
+    const enhanced = completion.choices[0]?.message?.content?.trim();
+    return enhanced || originalNote;
+  } catch (error) {
+    console.error('Error enhancing note:', error);
+    return originalNote;
+  }
+}
   async reportIssue(
     authUser: AuthUserPayload,
     responseId: string,
