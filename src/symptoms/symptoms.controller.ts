@@ -21,6 +21,11 @@ export class SymptomsController {
     return this.service.findAll();
   }
 
+  @Get('patients')
+  getPatientsWithAssignmentStatus() {
+    return this.service.getPatientsWithAssignmentStatus();
+  }
+
   @Get('form/latest')
   getLatestActive() {
     return this.service.getLatestActive();
@@ -67,6 +72,11 @@ export class SymptomsController {
   @Get('response/today/:patientId')
   getTodayResponse(@Param('patientId') patientId: string) {
     return this.service.getTodayResponse(patientId);
+  }
+
+  @Get('questions/status/today/:patientId')
+  getTodayQuestionStatus(@Param('patientId') patientId: string) {
+    return this.service.getTodayQuestionStatus(patientId);
   }
 
   @Get('response/by-date/:date')

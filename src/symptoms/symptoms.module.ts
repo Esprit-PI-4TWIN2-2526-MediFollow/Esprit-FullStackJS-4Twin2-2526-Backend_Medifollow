@@ -9,6 +9,7 @@ import { Role, RoleSchema } from 'src/role/schemas/role.schema';
 import { AlertModule } from 'src/alert/alert.module';
 import { AiAnalysisModule } from 'src/ai-analysis/ai-analysis.module';
 import { SuggestionsModule } from './autocomplete/suggestions.module';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SuggestionsModule } from './autocomplete/suggestions.module';
     ]),
     AlertModule,
     AiAnalysisModule,
+    NotificationsModule,
   ],
   controllers: [SymptomsController],
   providers: [SymptomsService],
