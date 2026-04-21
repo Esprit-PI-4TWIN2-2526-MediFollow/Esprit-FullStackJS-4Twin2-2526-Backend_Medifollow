@@ -25,6 +25,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ChatModule } from './communication/chat.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { TelemedicineModule } from './telemedicine/telemedicine.module';
+import { AuditorModule } from './auditor/auditor.module';
 import { NotificationsModule } from './notifications/notifications.module';
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ChatModule,
     MetricsModule,
     TelemedicineModule,
+    AuditorModule,
     NotificationsModule,
   ],
   controllers: [AppController],
