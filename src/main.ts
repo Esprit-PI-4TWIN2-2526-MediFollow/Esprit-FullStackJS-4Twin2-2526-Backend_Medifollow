@@ -12,9 +12,9 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe());
 
   // CORS configuration with environment variable
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+  const frontendUrl = process.env.FRONTEND_URL || 'https://medifollow.netlify.app';
   app.enableCors({
-    origin: [frontendUrl, 'http://localhost:4200'],
+    origin: [frontendUrl],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],

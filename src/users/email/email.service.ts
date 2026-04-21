@@ -58,7 +58,7 @@ export class EmailService {
     temporaryPassword: string,
     recipientName?: string,
   ) {
-    const loginUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+    const loginUrl = process.env.FRONTEND_URL || 'https://medifollow.netlify.app';
     const safeName = recipientName?.trim() || 'User';
     const loginEmail = to.trim();
     const year = new Date().getFullYear();

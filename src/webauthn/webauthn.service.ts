@@ -17,8 +17,8 @@ import { User, UserDocument } from '../users/users.schema';
 @Injectable()
 export class WebauthnService {
   private rpName = 'MediFollow';
-  private rpID = 'localhost';
-  private origin = `http://localhost:4200`;
+  private rpID = process.env.FRONTEND_URL?.includes('localhost') ? 'localhost' : new URL(process.env.FRONTEND_URL || 'https://medifollow.netlify.app').hostname;
+  private origin = process.env.FRONTEND_URL || 'https://medifollow.netlify.app';
 
   constructor(
     @InjectModel(Authenticator.name)

@@ -18,7 +18,7 @@ import { UseGuards } from '@nestjs/common';
 import { MessageAttachment } from './schemas/message.schema';
 
 @WebSocketGateway({
-  cors: { origin: 'http://localhost:4200', credentials: true },
+  cors: { origin: process.env.FRONTEND_URL || 'https://medifollow.netlify.app', credentials: true },
   namespace: '/chat',
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
