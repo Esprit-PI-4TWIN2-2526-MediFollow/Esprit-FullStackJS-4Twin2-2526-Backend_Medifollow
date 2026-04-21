@@ -27,6 +27,8 @@ import { MetricsModule } from './metrics/metrics.module';
 import { TelemedicineModule } from './telemedicine/telemedicine.module';
 import { AuditorModule } from './auditor/auditor.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { VoiceAgentModule } from './voice-agent/voice-agent.module';
+import { VoiceModule } from './voice/voice.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -68,6 +70,8 @@ import { NotificationsModule } from './notifications/notifications.module';
     TelemedicineModule,
     AuditorModule,
     NotificationsModule,
+    VoiceAgentModule,
+    VoiceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
