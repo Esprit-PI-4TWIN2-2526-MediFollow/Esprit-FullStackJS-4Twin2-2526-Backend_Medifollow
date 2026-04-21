@@ -15,6 +15,7 @@ import { ChatService } from './chat.service';
 import { UsersService } from 'src/users/users.service';
 import { WsJwtGuard } from './ws-jwt.guard';  // ← manquait
 import { UseGuards } from '@nestjs/common';
+import { MessageAttachment } from './schemas/message.schema';
 
 @WebSocketGateway({
   cors: { origin: 'http://localhost:4200', credentials: true },
@@ -101,7 +102,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @UseGuards(WsJwtGuard)
   @SubscribeMessage('send-message')
   async handleMessage(
-    @MessageBody() data: { roomId: string; content: string },
+    @MessageBody()
+    data: { roomId: string; content?: string; attachment?: MessageAttachment },
     @ConnectedSocket() client: Socket,
   ) {
     const me = (client as any).currentUser;
@@ -111,6 +113,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       senderRoleName: me.roleName,
       roomId: data.roomId,
       content: data.content,
+      attachment: data.attachment,
     });
 
     this.server.to(data.roomId).emit('receive-message', saved);

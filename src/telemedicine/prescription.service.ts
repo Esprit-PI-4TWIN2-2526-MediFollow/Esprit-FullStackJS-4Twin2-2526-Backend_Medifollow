@@ -10,6 +10,7 @@ import { Consultation, ConsultationDocument } from './schemas/consultation.schem
 import { User, UserDocument } from '../users/users.schema';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { TelemedicineNotificationService } from './telemedicine-notification.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -22,6 +23,7 @@ export class PrescriptionService {
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
     private notificationService: TelemedicineNotificationService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(dto: CreatePrescriptionDto): Promise<Prescription> {
@@ -196,6 +198,32 @@ export class PrescriptionService {
         );
       } catch (error) {
         console.error('Error sending prescription notification:', error);
+      }
+
+      // Créer notification in-app pour le patient
+      try {
+        const patient = populatedPrescription.patient as any;
+        const doctor = populatedPrescription.doctor as any;
+        
+        await this.notificationsService.create({
+          recipientId: String(patient._id),
+          type: 'prescription',
+          priority: 'medium',
+          title: 'Prescription Ready',
+          message: `Dr. ${doctor.firstName} ${doctor.lastName} has issued your prescription`,
+          data: {
+            prescriptionId: populatedPrescription._id.toString(),
+            qrCode: populatedPrescription.qrCode,
+            medicationsCount: populatedPrescription.medications.length,
+            validUntil: validUntil.toISOString(),
+            doctorName: `${doctor.firstName} ${doctor.lastName}`,
+          },
+          patientId: String(patient._id),
+          actionUrl: `/telemedicine/prescriptions/${populatedPrescription._id}`,
+        });
+        console.log(`📬 Prescription notification created for patient ${patient._id}`);
+      } catch (notifError) {
+        console.error('Error creating prescription notification:', notifError);
       }
     }
 

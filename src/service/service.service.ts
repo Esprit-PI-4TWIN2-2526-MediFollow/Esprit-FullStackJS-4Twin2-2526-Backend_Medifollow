@@ -22,7 +22,7 @@ export class ServiceService {
 
   async findOne(id: string): Promise<Service> {
     const service = await this.serviceModel.findById(id);
-    if (!service) throw new NotFoundException('Service not found');
+    if (!service || service.deletedAt) throw new NotFoundException('Service not found');
     return service;
   }
 

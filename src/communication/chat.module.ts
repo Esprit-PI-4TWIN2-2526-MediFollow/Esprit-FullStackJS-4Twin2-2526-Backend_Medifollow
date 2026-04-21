@@ -7,6 +7,8 @@ import { Message, MessageSchema } from './schemas/message.schema';
 import { UsersModule } from 'src/users/users.module';
 import { WsJwtGuard } from './ws-jwt.guard';
 import { ChatGateway } from './chat.gatway';
+import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
+import { ChatController } from './chat.controller';
 
 @Module({
   imports: [
@@ -22,7 +24,9 @@ import { ChatGateway } from './chat.gatway';
     }),
     ConfigModule,
     UsersModule,
+    CloudinaryModule,
   ],
+  controllers: [ChatController],
   providers: [ChatGateway, ChatService, WsJwtGuard],
 })
 export class ChatModule {}

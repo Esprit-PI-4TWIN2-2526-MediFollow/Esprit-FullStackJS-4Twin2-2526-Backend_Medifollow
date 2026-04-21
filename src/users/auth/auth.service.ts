@@ -1,12 +1,13 @@
 // src/auth/auth.service.ts
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { AuthDto, FirstLoginPasswordDto } from './auth.dto';
+import { AuthDto, FirstLoginPasswordDto, TwoFactorVerifyDto } from './auth.dto';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users.service';
 import * as bcrypt from 'bcryptjs';
 import { InjectModel } from '@nestjs/mongoose';
 import { User, UserDocument } from '../users.schema';
 import { Model, isValidObjectId } from 'mongoose';
+import * as speakeasy from 'speakeasy';
 const loginAttempts = new Map<string, { count: number; blockedUntil?: number }>();
 const MAX_ATTEMPTS = 5;
 const BLOCK_DURATION = 15 * 60 * 1000;
@@ -18,6 +19,18 @@ export class AuthService {
         private usersService: UsersService,
         private jwtService: JwtService,
     ) { }
+
+    private verifyTotp(secretBase32: string, code: string): boolean {
+        const token = (code ?? '').trim();
+        if (!/^\d{6}$/.test(token)) return false;
+
+        return speakeasy.totp.verify({
+            secret: secretBase32,
+            encoding: 'base32',
+            token,
+            window: 1,
+        });
+    }
 
     private registerFailure(email: string) {
         const now = Date.now();
@@ -46,7 +59,10 @@ export class AuthService {
             );
         }
 
-        const user = await this.usersService.findByEmail(email);
+        const user = await this.userModel
+            .findOne({ email })
+            .select('+twoFactorSecret')
+            .exec();
         if (!user) {
             this.registerFailure(email);
             const remaining = MAX_ATTEMPTS - (loginAttempts.get(email)?.count || 0);
@@ -82,10 +98,44 @@ export class AuthService {
 
             throw new UnauthorizedException('Compte inactif. Contactez un administrateur.');
         }
-        const roleValue =
+
+        if (user.twoFactorEnabled) {
+            if (!user.twoFactorSecret) {
+                throw new UnauthorizedException('Two-factor authentication is enabled but secret is missing');
+            }
+
+            const code = authDto.twoFactorCode?.trim();
+            if (!code) {
+                const twoFactorToken = this.jwtService.sign(
+                    {
+                        sub: user._id.toString(),
+                        email: user.email,
+                        purpose: 'two-factor',
+                    },
+                    { expiresIn: '5m' },
+                );
+
+                return {
+                    requiresTwoFactor: true,
+                    twoFactorToken,
+                    message: 'Two-factor authentication code required.',
+                };
+            }
+
+            const ok = this.verifyTotp(user.twoFactorSecret, code);
+            if (!ok) {
+                throw new UnauthorizedException('Invalid two-factor code');
+            }
+        }
+        const roleValueRaw =
             typeof user.role === 'object' && user.role !== null && 'name' in user.role
-                ? user.role.name
+                ? (user.role as any).name
                 : user.role;
+
+        const roleValue =
+            typeof roleValueRaw === 'string'
+                ? roleValueRaw
+                : (roleValueRaw as any)?.toString?.() ?? '';
 
         const payload = {
             sub: user._id.toString(),
@@ -104,6 +154,7 @@ export class AuthService {
                 avatarUrl: user.avatarUrl,
                 phoneNumber: user.phoneNumber,
                 actif: user.actif,
+                twoFactorEnabled: user.twoFactorEnabled,
             },
         };
     }
@@ -171,6 +222,77 @@ export class AuthService {
                 avatarUrl: user.avatarUrl,
                 phoneNumber: user.phoneNumber,
                 actif: user.actif,
+                twoFactorEnabled: user.twoFactorEnabled,
+            },
+        };
+    }
+
+    async verifyTwoFactor(dto: TwoFactorVerifyDto) {
+        const token = dto.twoFactorToken?.trim();
+        const code = dto.code?.trim();
+
+        if (!token || !code) {
+            throw new BadRequestException('twoFactorToken and code are required');
+        }
+
+        let payload: any;
+        try {
+            payload = this.jwtService.verify(token);
+        } catch {
+            throw new UnauthorizedException('Invalid or expired twoFactorToken');
+        }
+
+        if (payload?.purpose !== 'two-factor' || !payload?.sub || !isValidObjectId(payload.sub)) {
+            throw new UnauthorizedException('Invalid twoFactorToken');
+        }
+
+        const user = await this.userModel
+            .findById(payload.sub)
+            .select('+twoFactorSecret')
+            .exec();
+        if (!user) {
+            throw new UnauthorizedException('User not found');
+        }
+        if (!user.actif) {
+            throw new UnauthorizedException('Compte dÇ¸sactivÇ¸');
+        }
+        if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+            throw new UnauthorizedException('Two-factor authentication is not enabled for this account');
+        }
+
+        const ok = this.verifyTotp(user.twoFactorSecret, code);
+        if (!ok) {
+            throw new UnauthorizedException('Invalid two-factor code');
+        }
+
+        const roleValueRaw =
+            typeof user.role === 'object' && user.role !== null && 'name' in user.role
+                ? (user.role as any).name
+                : user.role;
+
+        const roleValue =
+            typeof roleValueRaw === 'string'
+                ? roleValueRaw
+                : (roleValueRaw as any)?.toString?.() ?? '';
+
+        const accessToken = this.jwtService.sign({
+            sub: user._id.toString(),
+            email: user.email,
+            role: roleValue,
+        });
+
+        return {
+            accessToken,
+            user: {
+                id: user._id.toString(),
+                email: user.email,
+                role: roleValue,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                avatarUrl: user.avatarUrl,
+                phoneNumber: user.phoneNumber,
+                actif: user.actif,
+                twoFactorEnabled: user.twoFactorEnabled,
             },
         };
     }

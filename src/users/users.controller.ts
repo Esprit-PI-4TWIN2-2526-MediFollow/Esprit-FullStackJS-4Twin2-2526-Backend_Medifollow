@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { User } from './users.schema';
 import { Roles } from 'src/role/decorator/role.decorator';
@@ -9,6 +9,8 @@ import { plainToInstance } from 'class-transformer';
 import { JwtAuthGuard } from './auth/jwt.guard';
 import { RolesGuard } from 'src/role/guard/role.guard';
 import type { Response } from 'express';
+import { TwoFactorService } from './two-factor.service';
+import { TwoFactorCodeDto } from './two-factor.dto';
 
 // DTO pour réactiver le compte
 class ReactivateAccountDto {
@@ -23,7 +25,10 @@ class ReactivateAccountDto {
 //@UseGuards(JwtAuthGuard, RolesGuard)
 
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly twoFactorService: TwoFactorService,
+  ) { }
 
   // create user
   @Post('/signup')
@@ -167,6 +172,33 @@ export class UsersController {
     return this.usersService.reactivateAccount(email, code);
   }
 
+  @Get('/users/me/2fa/status')
+  @UseGuards(JwtAuthGuard)
+  getTwoFactorStatus(@Req() req: any) {
+    const userId = req?.user?.sub ?? req?.user?.userId;
+    return this.twoFactorService.getStatus(userId);
+  }
+
+  @Post('/users/me/2fa/setup')
+  @UseGuards(JwtAuthGuard)
+  setupTwoFactor(@Req() req: any) {
+    const userId = req?.user?.sub ?? req?.user?.userId;
+    return this.twoFactorService.setup(userId);
+  }
+
+  @Post('/users/me/2fa/enable')
+  @UseGuards(JwtAuthGuard)
+  enableTwoFactor(@Req() req: any, @Body() dto: TwoFactorCodeDto) {
+    const userId = req?.user?.sub ?? req?.user?.userId;
+    return this.twoFactorService.enable(userId, dto.code);
+  }
+
+  @Post('/users/me/2fa/disable')
+  @UseGuards(JwtAuthGuard)
+  disableTwoFactor(@Req() req: any, @Body() dto: TwoFactorCodeDto) {
+    const userId = req?.user?.sub ?? req?.user?.userId;
+    return this.twoFactorService.disable(userId, dto.code);
+  }
 
 
   

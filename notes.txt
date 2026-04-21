@@ -81,7 +81,7 @@ yahyakaroui4TWIN233
 git push origin main
 
 
-
+qsd
 -------------------------------------------------------
 
 // Commande Merge Main --> ta branche 
@@ -126,3 +126,8 @@ mongodb://localhost:27017
 docker inspect medifollow-mongo --format "{{.NetworkSettings.Networks.bridge.IPAddress}}"
 
 // un petit test dans le CMD docker exec -it medifollow-mongo mongosh medifollow --eval "db.roles.countDocuments()"
+
+
+
+
+// test unitaire de module : Service npx jest src/service/ --coverage --coverageReporters=text
