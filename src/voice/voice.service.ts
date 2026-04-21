@@ -170,7 +170,7 @@ export class VoiceService {
     const rawIntent = await this.extractIntentWithLlm(input.text);
     const normalizedIntent = this.normalizeIntent(rawIntent);
 
-    this.logger.log(`Detected intent: ${JSON.stringify(normalizedIntent)}`);
+    this.logger.log(`Detected action: ${normalizedIntent.action}`);
 
     this.ensureRolePermission(input.role, normalizedIntent.action);
 
@@ -196,7 +196,8 @@ export class VoiceService {
             {
               role: 'system',
               content:
-                'You are an intent parser for a healthcare voice assistant. Return strict JSON only with keys: action, field, value, target. ' +
+                'You are an intent parser for a healthcare voice assistant. English only. ' +
+                'Return strict JSON only with keys: action, field, value, target. ' +
                 'Allowed action values: NAVIGATE, FILL_FIELD, SUBMIT_FORM, GET_PATIENTS, GET_ALERTS, UNKNOWN. ' +
                 'Allowed targets for NAVIGATE: dashboard, symptoms, patients. ' +
                 'Allowed fields for FILL_FIELD: temperature, heart_rate, blood_pressure, oxygen, pain_level. ' +
@@ -222,8 +223,8 @@ export class VoiceService {
         return { action: 'UNKNOWN' };
       }
 
-      const parsed = JSON.parse(content) as RawIntent;
-      return parsed;
+      const parsed = this.safeParseIntent(content);
+      return parsed ?? { action: 'UNKNOWN' };
     } catch {
       return { action: 'UNKNOWN' };
     }
@@ -291,7 +292,26 @@ export class VoiceService {
   private ensureRolePermission(role: VoiceRole, action: VoiceAction): void {
     const allowedActions = ROLE_POLICIES[role];
     if (!allowedActions.has(action)) {
-      throw new ForbiddenException(`Action ${action} is forbidden for role ${role}`);
+      throw new ForbiddenException('Unauthorized action');
+    }
+  }
+
+  private safeParseIntent(content: string): RawIntent | null {
+    const trimmed = content.trim();
+
+    try {
+      return JSON.parse(trimmed) as RawIntent;
+    } catch {
+      const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      if (!fenced?.[1]) {
+        return null;
+      }
+
+      try {
+        return JSON.parse(fenced[1]) as RawIntent;
+      } catch {
+        return null;
+      }
     }
   }
 }
