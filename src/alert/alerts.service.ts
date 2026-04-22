@@ -26,13 +26,19 @@ export class AlertsService {
     doctorId?: string
   ) {
     try {
+      console.log(`🔍 [ALERT CHECK] Calling ML service for patient ${patientId}`);
+      console.log(`📊 [ALERT CHECK] Vitals sent:`, JSON.stringify(vitals));
+      
       const response = await firstValueFrom(
         this.httpService.post(`${this.fastApiUrl}/predict-alert`, vitals)
       );
 
       const alertData = response.data;
+      console.log(`📥 [ALERT CHECK] ML Response:`, JSON.stringify(alertData));
 
       if (alertData.hasAlert) {
+        console.log(`🚨 [ALERT CHECK] Alert detected! Severity: ${alertData.severity}, Probability: ${alertData.alertProbability}%`);
+        
         const newAlert = new this.alertModel({
           patient: new Types.ObjectId(patientId),
           response: new Types.ObjectId(responseId),
@@ -44,7 +50,7 @@ export class AlertsService {
 
         await newAlert.save();
 
-        console.log(`🚨 Alerte ${alertData.severity.toUpperCase()} créée pour le patient ${patientId}`);
+        console.log(`✅ [ALERT CHECK] Alert saved to database with ID: ${newAlert._id}`);
 
         // === CREATE NOTIFICATION FOR DOCTOR ===
         if (doctorId) {
@@ -71,7 +77,7 @@ export class AlertsService {
                 type: 'alert',
                 priority: priorityMap[alertData.severity] || 'high',
                 title: titleMap[alertData.severity] || 'Patient Alert',
-                message: `${patient.firstName} ${patient.lastName} has a ${alertData.severity} severity alert (${Math.round(alertData.alertProbability * 100)}% probability)`,
+                message: `${patient.firstName} ${patient.lastName} has a ${alertData.severity} severity alert (${alertData.alertProbability}% probability)`,
                 data: {
                   alertId: newAlert._id.toString(),
                   severity: alertData.severity,
@@ -82,19 +88,28 @@ export class AlertsService {
                 actionUrl: `/alerts/${newAlert._id}`,
               });
 
-              console.log(`📬 Notification d'alerte ${alertData.severity} créée pour le médecin ${doctorId}`);
+              console.log(`📬 [ALERT CHECK] Notification created for doctor ${doctorId}`);
+            } else {
+              console.warn(`⚠️ [ALERT CHECK] Patient ${patientId} not found for notification`);
             }
           } catch (notifError) {
-            console.error('⚠️ Erreur création notification d\'alerte:', notifError);
+            console.error('❌ [ALERT CHECK] Error creating notification:', notifError);
           }
+        } else {
+          console.warn(`⚠️ [ALERT CHECK] No doctorId provided, notification not created`);
         }
 
         return newAlert;
+      } else {
+        console.log(`ℹ️ [ALERT CHECK] No alert detected (hasAlert=false, severity=${alertData.severity}, probability=${alertData.alertProbability}%)`);
       }
 
       return null;
     } catch (error) {
-      console.error('Erreur lors de l’appel à FastAPI:', error.message);
+      console.error('❌ [ALERT CHECK] Error calling ML service:', error.message);
+      if (error.response) {
+        console.error('❌ [ALERT CHECK] ML service response:', error.response.data);
+      }
       return null;
     }
   }
@@ -109,12 +124,10 @@ export class AlertsService {
       .exec();
   }
 
-// alert.service.ts
-
 async findOne(id: string): Promise<Alert> {
   const alert = await this.alertModel
     .findById(id)
-    .populate('patient', 'firstName lastName email avatarUrl phoneNumber')  // ← Important : populate le patient
+    .populate('patient', 'firstName lastName email avatarUrl phoneNumber')
     .exec();
 
   if (!alert) {
@@ -124,24 +137,10 @@ async findOne(id: string): Promise<Alert> {
   return alert;
 }
 
-
-  // Récupérer les alertes non lues pour un médecin
-  /* async getUnreadAlertsForDoctor(doctorId: string) {
-    return this.alertModel
-      .find({ 
-        doctorId: new Types.ObjectId(doctorId),
-        isRead: false 
-      })
-      .sort({ createdAt: -1 })
-      .populate('patient', 'firstName lastName')
-      .populate('response')
-      .exec();
-  } */
-
   async getUnreadAlertsForDoctor(doctorId: string) {
   return this.alertModel
     .find({ 
-      doctorId: doctorId,   // ← doctorId est stocké comme string
+      doctorId: doctorId,
       isRead: false 
     })
     .sort({ createdAt: -1 })
