@@ -440,10 +440,15 @@ export class SymptomsService {
       .findById(dto.formId)
       .exec();
 
-     
-
     if (!symptomForm) {
       throw new NotFoundException(`Symptom form ${dto.formId} not found`);
+    }
+
+    // Log form questions for debugging
+    console.log(`📋 Form loaded: ${symptomForm.title}`);
+    console.log(`📋 Questions count: ${symptomForm.questions?.length || 0}`);
+    if (symptomForm.questions?.length === 0) {
+      console.warn(`⚠️ WARNING: Symptom form has NO questions! This will prevent vitals extraction.`);
     }
 
     if (!Array.isArray(dto.answers) || dto.answers.length === 0) {
@@ -568,6 +573,23 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
       },
     ])
   );
+  
+  console.log(`📋 QuestionMap size: ${questionMap.size}`);
+  if (questionMap.size === 0) {
+    console.error(`❌ QuestionMap is EMPTY! Cannot extract vitals for alert.`);
+    console.error(`❌ Form ID: ${symptomForm._id}, Title: ${symptomForm.title}`);
+    console.error(`❌ Questions array length: ${symptomForm.questions?.length || 0}`);
+  } else {
+    console.log(`📋 Sample questions in map:`);
+    let count = 0;
+    for (const [id, q] of questionMap.entries()) {
+      if (count < 3) {
+        console.log(`   - ${q.label} (category: ${q.category})`);
+        count++;
+      }
+    }
+  }
+  
   const vitalsForAlert = this.extractVitalsForAlert(normalizedAnswers, questionMap);
   console.log(`📊 Vitals envoyés à FastAPI:`, vitalsForAlert);
 
