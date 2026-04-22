@@ -4,6 +4,8 @@ import { Model, Types } from 'mongoose';
 import { Alert } from './schemas/alert.schema';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import { NotificationsService } from '../notifications/notifications.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class AlertsService {
@@ -13,6 +15,8 @@ export class AlertsService {
   constructor(
     @InjectModel(Alert.name) private alertModel: Model<Alert>,
     private readonly httpService: HttpService,
+    private readonly notificationsService: NotificationsService,
+    private readonly usersService: UsersService,
   ) {}
 
   async checkAndCreateAlert(
@@ -41,6 +45,50 @@ export class AlertsService {
         await newAlert.save();
 
         console.log(`🚨 Alerte ${alertData.severity.toUpperCase()} créée pour le patient ${patientId}`);
+
+        // === CREATE NOTIFICATION FOR DOCTOR ===
+        if (doctorId) {
+          try {
+            const patient = await this.usersService.findOne(patientId);
+            
+            if (patient) {
+              const priorityMap = {
+                'critical': 'urgent',
+                'high': 'high',
+                'medium': 'medium',
+                'low': 'low'
+              };
+
+              const titleMap = {
+                'critical': '🚨 CRITICAL ALERT',
+                'high': '⚠️ High Priority Alert',
+                'medium': '⚡ Medium Alert',
+                'low': 'ℹ️ Low Alert'
+              };
+
+              await this.notificationsService.create({
+                recipientId: doctorId,
+                type: 'alert',
+                priority: priorityMap[alertData.severity] || 'high',
+                title: titleMap[alertData.severity] || 'Patient Alert',
+                message: `${patient.firstName} ${patient.lastName} has a ${alertData.severity} severity alert (${Math.round(alertData.alertProbability * 100)}% probability)`,
+                data: {
+                  alertId: newAlert._id.toString(),
+                  severity: alertData.severity,
+                  probability: alertData.alertProbability,
+                  vitals: vitals,
+                },
+                patientId: patientId,
+                actionUrl: `/alerts/${newAlert._id}`,
+              });
+
+              console.log(`📬 Notification d'alerte ${alertData.severity} créée pour le médecin ${doctorId}`);
+            }
+          } catch (notifError) {
+            console.error('⚠️ Erreur création notification d\'alerte:', notifError);
+          }
+        }
+
         return newAlert;
       }
 

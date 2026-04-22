@@ -4,6 +4,8 @@ import { HttpModule } from '@nestjs/axios';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Alert, AlertSchema } from './schemas/alert.schema';
 import { AlertsController } from './alerts.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -11,6 +13,8 @@ import { AlertsController } from './alerts.controller';
     MongooseModule.forFeature([
       { name: Alert.name, schema: AlertSchema },
     ]),
+    NotificationsModule,  // For creating notifications
+    UsersModule,          // For getting patient info
   ],
   providers: [ AlertsService],
   exports:[AlertsService],
