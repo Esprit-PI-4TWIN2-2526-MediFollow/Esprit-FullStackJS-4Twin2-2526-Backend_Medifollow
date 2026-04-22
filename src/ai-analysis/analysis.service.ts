@@ -3,7 +3,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timer } from 'rxjs';
+import { catchError, retry, mergeMap } from 'rxjs/operators';
 import { UsersService } from '../users/users.service';
 import { Analysis } from './schemas/analysis.schema';
 
@@ -17,8 +18,6 @@ export class AnalysisService {
     @InjectModel(Analysis.name)
     private readonly analysisModel: Model<Analysis>,
   ) {}
-
- // src/ai-analysis/analysis.service.ts
 
 async generateFromFormAnswers(
   patientId: string,
@@ -36,14 +35,33 @@ async generateFromFormAnswers(
     console.log(`🤖 [ML] Patient trouvé: ${patientFullName}`);
     console.log(`🤖 [ML] Envoi des réponses au Gravity Service: ${JSON.stringify(formAnswers)}`);
 
-    // Call Gravity Service directly for severity prediction
-    const response = await firstValueFrom(
-      this.httpService.post(`${this.GRAVITY_SERVICE_URL}/predict-gravity`, {
-        patient_id: patientId,
-        patient_name: patientFullName,
-        answers: formAnswers,
-      }),
-    );
+    // Call Gravity Service with retry logic for cold starts
+    let response;
+    try {
+      response = await firstValueFrom(
+        this.httpService.post(`${this.GRAVITY_SERVICE_URL}/predict-gravity`, {
+          patient_id: patientId,
+          patient_name: patientFullName,
+          answers: formAnswers,
+        }).pipe(
+          retry({
+            count: 3,
+            delay: (error, retryCount) => {
+              console.log(`⏳ Retry attempt ${retryCount} for Gravity Service (cold start possible)...`);
+              return timer(retryCount * 2000); // 2s, 4s, 6s delays
+            }
+          }),
+          catchError((error) => {
+            console.error('❌ Gravity Service error after retries:', error.message);
+            throw error;
+          })
+        )
+      );
+    } catch (httpError: any) {
+      console.error('⚠️ Gravity Service unavailable (502/timeout). This is non-blocking.');
+      console.error('💡 Tip: Render free tier services have cold starts. First request may take 30-60s.');
+      return null;
+    }
 
     const gravityResult = response.data;
     console.log(`🤖 [Gravity] Réponse du Gravity Service reçue: ${JSON.stringify(gravityResult)}`);
