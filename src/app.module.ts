@@ -29,8 +29,6 @@ import { I18nModule } from './traduction/i18n.module';
 import { SuggestionsModule } from './symptoms/autocomplete/suggestions.module';
 import { AuditorModule } from './auditor/auditor.module';
 import { NotificationsModule } from './notifications/notifications.module';
-import { VoiceAgentModule } from './voice-agent/voice-agent.module';
-import { VoiceModule } from './voice/voice.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -74,8 +72,6 @@ import { VoiceModule } from './voice/voice.module';
     SuggestionsModule,
     AuditorModule,
     NotificationsModule,
-    VoiceAgentModule,
-    VoiceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
