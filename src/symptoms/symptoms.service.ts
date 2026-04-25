@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -197,6 +198,7 @@ type PatientAssignmentStatus = {
 
 @Injectable()
 export class SymptomsService {
+  private readonly logger = new Logger(SymptomsService.name);
   private client = new Groq({
     apiKey: process.env.GROQ_API_KEY,
   });
@@ -231,6 +233,9 @@ export class SymptomsService {
     const questions = this.normalizeQuestions(dto.questions ?? []);
     const status = this.normalizeStatus(dto.status, dto.isActive);
     const isActive = status === 'active';
+    const startDate = this.normalizeDate(dto.startDate ? new Date(dto.startDate) : new Date());
+    const durationInDays = this.normalizeDurationInDays(dto.durationInDays ?? 7);
+    const endDate = this.calculateEndDate(startDate, durationInDays);
 
     if (isActive) {
       await this.symptomModel
@@ -251,6 +256,9 @@ export class SymptomsService {
       title,
       description: dto.description?.trim() ?? '',
       medicalService: dto.medicalService?.trim() ?? '',
+      durationInDays,
+      startDate,
+      endDate,
       patientIds,
       patientId: patientIds[0],
       questions,
@@ -368,6 +376,14 @@ export class SymptomsService {
       updateData.medicalService = dto.medicalService.trim();
     }
 
+    if (dto.durationInDays !== undefined) {
+      updateData.durationInDays = this.normalizeDurationInDays(dto.durationInDays);
+    }
+
+    if (dto.startDate !== undefined) {
+      updateData.startDate = this.normalizeDate(new Date(dto.startDate));
+    }
+
     if (dto.patientIds !== undefined || dto.patientId !== undefined) {
       const patientIds = this.normalizePatientIds(dto.patientIds, dto.patientId);
       updateData.patientIds = patientIds;
@@ -402,6 +418,12 @@ export class SymptomsService {
           { $set: { isActive: false, status: 'inactive' } },
         )
         .exec();
+    }
+
+    if (updateData.startDate !== undefined || updateData.durationInDays !== undefined) {
+      const nextStartDate = updateData.startDate ?? this.normalizeDate(new Date(existing.startDate ?? new Date()));
+      const nextDurationInDays = updateData.durationInDays ?? this.normalizeDurationInDays(existing.durationInDays ?? 7);
+      updateData.endDate = this.calculateEndDate(nextStartDate, nextDurationInDays);
     }
 
     const updated = await this.symptomModel
@@ -444,6 +466,21 @@ export class SymptomsService {
 
     if (!symptomForm) {
       throw new NotFoundException(`Symptom form ${dto.formId} not found`);
+    }
+
+    const today = this.normalizeDate(new Date());
+    const effectiveStartDate = this.normalizeDate(
+      new Date(symptomForm.startDate ?? new Date()),
+    );
+    const effectiveDurationInDays = this.normalizeDurationInDays(
+      symptomForm.durationInDays ?? 7,
+    );
+    const effectiveEndDate = symptomForm.endDate
+      ? this.normalizeDate(new Date(symptomForm.endDate))
+      : this.calculateEndDate(effectiveStartDate, effectiveDurationInDays);
+
+    if (today > effectiveEndDate) {
+      throw new BadRequestException('Form expired. You can no longer submit symptoms.');
     }
 
     if (!Array.isArray(dto.answers) || dto.answers.length === 0) {
@@ -1067,134 +1104,195 @@ Improved response (single sentence, professional tone):
   // ── AI Question Generation ────────────────────────────────────────────────────
 
   async generateQuestions(dto: GenerateSymptomDto): Promise<{ questions: FrontendGeneratedQuestion[] }> {
-    const title             = dto.title?.trim();
-    const description       = dto.description?.trim() ?? '';
-    const medicalService    = dto.medicalService?.trim() ?? '';
-    const category          = dto.category?.trim();
-    const numberOfQuestions = dto.numberOfQuestions ?? 7;
+    const title = dto.title?.trim();
+    const description = dto.description?.trim() ?? '';
+    const medicalService = (dto.service ?? dto.medicalService ?? '').trim();
+    const section = (dto.section ?? dto.category ?? '').trim();
+    const numberOfQuestions = dto.numberOfQuestions ?? 5;
 
-    if (!title) throw new BadRequestException('title is required');
+    if (!title || !medicalService || !section) {
+      throw new BadRequestException('Missing required fields');
+    }
 
-    // Pick the clinical hints for the declared service (case-insensitive lookup)
-    const serviceKey    = Object.keys(SERVICE_CLINICAL_HINTS).find(
-      (k) => k.toLowerCase() === medicalService.toLowerCase(),
-    );
-    const clinicalHints = serviceKey
-      ? SERVICE_CLINICAL_HINTS[serviceKey]
-      : DEFAULT_CLINICAL_HINTS;
+    const { systemPrompt, userPrompt } = this.buildPrompt({
+      title,
+      description,
+      medicalService,
+      section,
+      numberOfQuestions,
+    });
 
-    // ── System prompt ─────────────────────────────────────────────────────────
-    const systemPrompt = `
-You are a senior clinical nurse specialist who designs post-visit and daily
-follow-up symptom forms for a hospital digital-health platform.
-
-Your forms are filled in by patients at home (or by bedside nurses) and are
-reviewed by the medical team to detect early deterioration.
-
-=== OUTPUT FORMAT ===
-Return ONLY a valid JSON array. No markdown, no backticks, no commentary.
-Each element must strictly follow this structure:
-{
-  "label":    "<question text in plain language>",
-  "type":     "<one of: text | number | rating | yes/no | single choice | multiple choice | select | date>",
-  "options":  ["<option 1>", "<option 2>", ...],  ← always present, empty [] when not applicable
-  "category": "<one of: vital_parameters | subjective_symptoms | patient_context | clinical_data>"
-}
-
-IMPORTANT: Each generated question MUST include a "category" field with one of these exact values:
-- "vital_parameters" for vital signs (temperature, heart rate, blood pressure, SpO2, weight, respiratory rate)
-- "subjective_symptoms" for subjective symptoms (pain, fatigue, nausea, shortness of breath, etc.)
-- "patient_context" for contextual patient data (history, ongoing treatments, patient profile)
-- "clinical_data" for advanced clinical data (glycemia, CRP, diuresis, hydration)
-
-=== TYPE SELECTION RULES ===
-• "number"          → measurable numeric vitals: temperature (°C), heart rate (bpm),
-                      oxygen saturation (%), blood pressure (e.g. 120/80), weight (kg),
-                      drain output (mL), pain numeric score when you need a raw number.
-• "rating"          → subjective intensity rated 1-10: pain, fatigue, nausea, anxiety,
-                      breathlessness, mood — anything the patient self-rates.
-• "yes/no"          → simple yes/no observations: dressing changed, fever present,
-                      medication taken, wound oozing, vomiting occurred, able to walk.
-• "single choice"   → one answer from a fixed list: wound appearance (clean / red /
-                      swollen / discharge), stool consistency (Bristol scale), mobility
-                      level, diet tolerance.
-• "multiple choice" → one or more answers from a list: associated symptoms (nausea AND
-                      dizziness AND headache), location of pain.
-• "select"          → one answer chosen from a dropdown list when a compact list UI is suitable.
-• "date"            → last dressing change date, last bowel movement date, date of
-                      symptom onset.
-• "text"            → open descriptions: nature of discharge, additional comments,
-                      anything that cannot be captured by the above types.
-
-=== CLINICAL DEPTH RULES ===
-1. Always include at least ONE vital-sign question relevant to the service
-   (temperature, SpO2, heart rate, blood pressure, weight…).
-2. Always include at least ONE dressing / wound-care question when the service
-   involves surgical or skin management (Surgery, Orthopedics, Dermatology, Oncology).
-3. Always include at least ONE pain question using "rating" type.
-4. For yes/no questions about actions (dressing changed? medication taken?),
-   add a follow-up "date" or "text" question when timing or detail matters.
-5. Questions must be concise, written in plain patient-friendly language (no jargon).
-6. Do NOT generate generic questions like "How are you feeling today?" —
-   every question must map to a specific clinical observable.
-
-=== SERVICE-SPECIFIC CLINICAL FOCUS ===
-${clinicalHints}
-
-${category ? `Generate ONLY questions from the "${category}" category.` : ''}
-`.trim();
-
-    // ── User prompt ───────────────────────────────────────────────────────────
-    const userPrompt = `
-Generate exactly ${numberOfQuestions} symptom follow-up questions.
-
-Form title:       ${title}
-Medical service:  ${medicalService || 'General Medicine'}
-Description:      ${description || 'Daily patient symptom follow-up'}
-
-Return raw JSON array only.
-`.trim();
-
-    // ── Groq call ─────────────────────────────────────────────────────────────
     try {
       const completion = await this.client.chat.completions.create({
-        model:       'llama-3.3-70b-versatile',
-        temperature: 0.3,   // lower = more deterministic, medically consistent
-        max_tokens:  2000,
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0.3,
+        max_tokens: 2000,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user',   content: userPrompt   },
+          { role: 'user', content: userPrompt },
         ],
       });
 
       const raw = completion.choices[0]?.message?.content?.trim() ?? '';
-      if (!raw) throw new InternalServerErrorException('Empty response from AI model');
-      console.log('Raw AI symptom questions output:', raw);
+      if (!raw) {
+        throw new InternalServerErrorException('Empty response from AI model');
+      }
 
       const jsonMatch = raw.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new SyntaxError('No JSON array found in the response');
+      if (!jsonMatch) {
+        throw new SyntaxError('No JSON array found in the response');
+      }
 
       const parsed = JSON.parse(jsonMatch[0]) as unknown[];
       const questions = this.normalizeGeneratedQuestions(parsed, numberOfQuestions);
-      console.log('Normalized AI symptom questions output:', JSON.stringify({ questions }));
-
-      return { questions };
-    } catch (err) {
-      if (
-        err instanceof BadRequestException ||
-        err instanceof InternalServerErrorException
-      ) throw err;
-
-      if (err instanceof SyntaxError) {
-        throw new InternalServerErrorException('AI response is not valid JSON');
+      if (!this.isStrictSectionOutputValid(questions, section, numberOfQuestions)) {
+        this.logger.warn(
+          `AI output rejected for section="${section || 'symptoms'}": invalid types, duplicates, or wrong count`,
+        );
+        return { questions: [] };
       }
-
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      throw new InternalServerErrorException(`AI generation error: ${message}`);
+      return { questions };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`AI generation error: ${message}`);
+      return { questions: [] };
     }
   }
 
-  // ── Private helpers ───────────────────────────────────────────────────────────
+  private buildPrompt(data: {
+    title: string;
+    description: string;
+    medicalService: string;
+    section: string;
+    numberOfQuestions: number;
+  }): { systemPrompt: string; userPrompt: string } {
+    const normalizedSection = this.normalizePromptSection(data.section);
+    const serviceKey = Object.keys(SERVICE_CLINICAL_HINTS).find(
+      (key) => key.toLowerCase() === data.medicalService.toLowerCase(),
+    );
+    const clinicalHints = serviceKey ? SERVICE_CLINICAL_HINTS[serviceKey] : DEFAULT_CLINICAL_HINTS;
+
+    const systemPrompt = `
+You are a senior clinical nurse specialist creating follow-up questions.
+
+SECTION: ${normalizedSection.label}
+
+STRICT RULES:
+- You MUST generate questions ONLY for this section.
+- You MUST NOT mix with other sections.
+- You MUST generate EXACTLY ${data.numberOfQuestions} questions.
+- You MUST avoid duplicates (same meaning or same wording).
+- Output MUST be JSON ONLY, with NO text outside JSON.
+
+SECTION RULES:
+${normalizedSection.rules}
+
+OUTPUT FORMAT (EXACT):
+[
+  {"question":"...","type":"..."}
+]
+
+Allowed type values for this section: ${normalizedSection.allowedTypes.join(', ')}
+`.trim();
+
+    const userPrompt = `
+Form title: ${data.title}
+Medical service: ${data.medicalService || 'General Medicine'}
+Description: ${data.description || 'Daily patient symptom follow-up'}
+
+Service-specific clinical hints:
+${clinicalHints}
+
+Section to generate: ${normalizedSection.label}
+Generate exactly ${data.numberOfQuestions} questions.
+Do not mix sections. Do not add explanations.
+Return raw JSON array only using [{"question":"...","type":"..."}].
+`.trim();
+
+    return { systemPrompt, userPrompt };
+  }
+
+  private normalizePromptSection(section: string): {
+    label: 'vital parameters' | 'symptoms' | 'patient context' | 'clinical data';
+    category: 'vital_parameters' | 'subjective_symptoms' | 'patient_context' | 'clinical_data';
+    allowedTypes: FrontendQuestionType[];
+    rules: string;
+  } {
+    const normalized = section.trim().toLowerCase().replace(/[_-]+/g, ' ');
+
+    if (normalized === 'vital parameters' || normalized === 'vital parameter') {
+      return {
+        label: 'vital parameters',
+        category: 'vital_parameters',
+        allowedTypes: ['number'],
+        rules: [
+          '- Ask ONLY numeric measurable values.',
+          '- Focus on heart rate, temperature, blood pressure, and SpO2.',
+          '- Type MUST be Number.',
+        ].join('\n'),
+      };
+    }
+
+    if (normalized === 'patient context') {
+      return {
+        label: 'patient context',
+        category: 'patient_context',
+        allowedTypes: ['yes/no', 'single choice', 'text'],
+        rules: [
+          '- Ask ONLY lifestyle/context questions.',
+          '- Focus on smoking, activity level, and daily habits.',
+          '- Use only Yes/No, Single Choice, or Text.',
+        ].join('\n'),
+      };
+    }
+
+    if (normalized === 'clinical data') {
+      return {
+        label: 'clinical data',
+        category: 'clinical_data',
+        allowedTypes: ['date', 'text'],
+        rules: [
+          '- Ask ONLY medical/clinical information questions.',
+          '- Focus on medication, lab results, and medical history.',
+          '- Use only Date or Text.',
+        ].join('\n'),
+      };
+    }
+
+    return {
+      label: 'symptoms',
+      category: 'subjective_symptoms',
+      allowedTypes: ['yes/no', 'rating', 'text'],
+      rules: [
+        '- Ask ONLY subjective symptom questions.',
+        '- Focus on pain, fatigue, dizziness.',
+        '- Use only Yes/No, Rating Scale, or Text.',
+      ].join('\n'),
+    };
+  }
+
+  private isStrictSectionOutputValid(
+    questions: FrontendGeneratedQuestion[],
+    section: string,
+    expectedCount: number,
+  ): boolean {
+    if (questions.length !== expectedCount) {
+      return false;
+    }
+
+    const { allowedTypes } = this.normalizePromptSection(section);
+    const allowedSet = new Set(allowedTypes);
+    for (const question of questions) {
+      if (!allowedSet.has(question.type)) {
+        return false;
+      }
+    }
+
+    const normalizedLabels = questions.map((question) => question.label.trim().toLowerCase());
+    return new Set(normalizedLabels).size === normalizedLabels.length;
+  }
+
+  // -- Private helpers -----------------------------------------------------------
 
   private async findPatientUsers(): Promise<UserDocument[]> {
     const patientRoles = await this.roleModel
@@ -1263,26 +1361,7 @@ Return raw JSON array only.
       $gte: this.getStartOfDay(today),
       $lt: this.getEndOfDay(today),
     };
-    const maxAttempts = Math.max(
-      ...(symptomForm.questions ?? []).map((question) =>
-        this.coerceStoredOccurrenceLimit(
-          (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
-          1,
-        ),
-      ),
-      1,
-    );
-
-    const totalSubmissionsToday = await this.symptomResponseModel.countDocuments({
-      patientId,
-      createdAt: dayRange,
-    });
-
-    if (totalSubmissionsToday >= maxAttempts) {
-      throw new BadRequestException(
-        `Maximum submissions (${maxAttempts}) reached for today`,
-      );
-    }
+    void symptomForm;
 
     for (const answer of answers) {
       const question = questionById.get(answer.questionId);
@@ -1291,15 +1370,17 @@ Return raw JSON array only.
       }
 
       const limit = this.coerceStoredOccurrenceLimit(
-        (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
-        1,
+        question.occurrencesPerDay,
+        this.coerceStoredOccurrenceLimit(
+          (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
+          1,
+        ),
       );
-      const rawTodayCount = await this.symptomResponseModel.countDocuments({
+      const todayCount = await this.getTodayCount(
         patientId,
-        createdAt: dayRange,
-        'answers.questionId': question._id?.toString() ?? answer.questionId,
-      });
-      const todayCount = Number.isFinite(rawTodayCount) ? Number(rawTodayCount) : 0;
+        question._id?.toString() ?? answer.questionId,
+        dayRange,
+      );
       const isLimitReached = todayCount >= limit;
 
       console.log(
@@ -1319,6 +1400,20 @@ Return raw JSON array only.
         );
       }
     }
+  }
+
+  private async getTodayCount(
+    patientId: string,
+    questionId: string,
+    dayRange: { $gte: Date; $lt: Date },
+  ): Promise<number> {
+    const rawTodayCount = await this.symptomResponseModel.countDocuments({
+      patientId,
+      createdAt: dayRange,
+      'answers.questionId': questionId,
+    });
+
+    return Number.isFinite(rawTodayCount) ? Number(rawTodayCount) : 0;
   }
 
   private isAnswerEmpty(value: NormalizedSymptomAnswer['value']): boolean {
@@ -1523,14 +1618,6 @@ Return raw JSON array only.
       .map((question, index) => this.normalizeGeneratedQuestion(question, index))
       .filter((question): question is FrontendGeneratedQuestion => question !== null);
 
-    while (normalizedQuestions.length < expectedCount) {
-      normalizedQuestions.push({
-        label: `Additional symptom question ${normalizedQuestions.length + 1}`,
-        type: 'text',
-        options: [],
-      });
-    }
-
     return normalizedQuestions.slice(0, expectedCount);
   }
 
@@ -1587,6 +1674,7 @@ Return raw JSON array only.
 
     const typeMap: Record<string, FrontendQuestionType> = {
       text: 'text',
+      'text response': 'text',
       textarea: 'text',
       string: 'text',
       number: 'number',
@@ -1594,6 +1682,7 @@ Return raw JSON array only.
       integer: 'number',
       float: 'number',
       rating: 'rating',
+      'rating scale': 'rating',
       scale: 'rating',
       likert: 'rating',
       'yes/no': 'yes/no',
@@ -2123,6 +2212,26 @@ Return raw JSON array only.
     }
 
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+
+  private normalizeDurationInDays(value: unknown): number {
+    if (
+      typeof value !== 'number' ||
+      !Number.isInteger(value) ||
+      value < 1
+    ) {
+      throw new BadRequestException('durationInDays must be a positive integer');
+    }
+
+    return value;
+  }
+
+  private calculateEndDate(startDate: Date, durationInDays: number): Date {
+    return new Date(
+      startDate.getFullYear(),
+      startDate.getMonth(),
+      startDate.getDate() + durationInDays,
+    );
   }
 
   private getStartOfDay(date: Date): Date {

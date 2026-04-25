@@ -182,6 +182,7 @@ export class SymptomsController {
 
   @Post('generate')
   generate(@Body() dto: GenerateSymptomDto) {
+    console.log('BODY RECEIVED:', dto);
     return this.service.generateQuestions(dto);
   }
 
