@@ -1,7 +1,7 @@
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
-export class GenerateSymptomDto {
-  [x: string]: any;
+export class GenerateQuestionsDto {
   @IsString()
   @IsNotEmpty()
   title: string;
@@ -10,17 +10,29 @@ export class GenerateSymptomDto {
   @IsOptional()
   description?: string;
 
-  @IsInt()
+  @Type(() => Number)
+  @IsNumber()
   @IsOptional()
   @Min(1)
   @Max(20)
   numberOfQuestions?: number;
 
   @IsString()
+  @IsNotEmpty()
+  service: string;
+
+  @IsString()
+  @IsNotEmpty()
+  section: string;
+
+  // Backward-compatible aliases
+  @IsString()
   @IsOptional()
   medicalService?: string;
 
-  @IsEnum(['vital_parameters', 'subjective_symptoms', 'patient_context', 'clinical_data'])
+  @IsString()
   @IsOptional()
   category?: string;
 }
+
+export { GenerateQuestionsDto as GenerateSymptomDto };
