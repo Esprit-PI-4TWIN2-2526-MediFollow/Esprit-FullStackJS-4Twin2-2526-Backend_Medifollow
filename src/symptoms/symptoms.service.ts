@@ -1326,26 +1326,7 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
       $gte: this.getStartOfDay(today),
       $lt: this.getEndOfDay(today),
     };
-    const maxAttempts = Math.max(
-      ...(symptomForm.questions ?? []).map((question) =>
-        this.coerceStoredOccurrenceLimit(
-          (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
-          1,
-        ),
-      ),
-      1,
-    );
-
-    const totalSubmissionsToday = await this.symptomResponseModel.countDocuments({
-      patientId,
-      createdAt: dayRange,
-    });
-
-    if (totalSubmissionsToday >= maxAttempts) {
-      throw new BadRequestException(
-        `Maximum submissions (${maxAttempts}) reached for today`,
-      );
-    }
+    void symptomForm;
 
     for (const answer of answers) {
       const question = questionById.get(answer.questionId);
@@ -1354,15 +1335,17 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
       }
 
       const limit = this.coerceStoredOccurrenceLimit(
-        (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
-        1,
+        question.occurrencesPerDay,
+        this.coerceStoredOccurrenceLimit(
+          (question as Question & { measurementsPerDay?: number }).measurementsPerDay,
+          1,
+        ),
       );
-      const rawTodayCount = await this.symptomResponseModel.countDocuments({
+      const todayCount = await this.getTodayCount(
         patientId,
-        createdAt: dayRange,
-        'answers.questionId': question._id?.toString() ?? answer.questionId,
-      });
-      const todayCount = Number.isFinite(rawTodayCount) ? Number(rawTodayCount) : 0;
+        question._id?.toString() ?? answer.questionId,
+        dayRange,
+      );
       const isLimitReached = todayCount >= limit;
 
       console.log(
@@ -1382,6 +1365,20 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
         );
       }
     }
+  }
+
+  private async getTodayCount(
+    patientId: string,
+    questionId: string,
+    dayRange: { $gte: Date; $lt: Date },
+  ): Promise<number> {
+    const rawTodayCount = await this.symptomResponseModel.countDocuments({
+      patientId,
+      createdAt: dayRange,
+      'answers.questionId': questionId,
+    });
+
+    return Number.isFinite(rawTodayCount) ? Number(rawTodayCount) : 0;
   }
 
   private isAnswerEmpty(value: NormalizedSymptomAnswer['value']): boolean {
