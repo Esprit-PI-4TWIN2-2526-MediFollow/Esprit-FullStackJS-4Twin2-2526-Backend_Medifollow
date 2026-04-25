@@ -233,6 +233,9 @@ export class SymptomsService {
     const questions = this.normalizeQuestions(dto.questions ?? []);
     const status = this.normalizeStatus(dto.status, dto.isActive);
     const isActive = status === 'active';
+    const startDate = this.normalizeDate(dto.startDate ? new Date(dto.startDate) : new Date());
+    const durationInDays = this.normalizeDurationInDays(dto.durationInDays ?? 7);
+    const endDate = this.calculateEndDate(startDate, durationInDays);
 
     if (isActive) {
       await this.symptomModel
@@ -253,6 +256,9 @@ export class SymptomsService {
       title,
       description: dto.description?.trim() ?? '',
       medicalService: dto.medicalService?.trim() ?? '',
+      durationInDays,
+      startDate,
+      endDate,
       patientIds,
       patientId: patientIds[0],
       questions,
@@ -370,6 +376,14 @@ export class SymptomsService {
       updateData.medicalService = dto.medicalService.trim();
     }
 
+    if (dto.durationInDays !== undefined) {
+      updateData.durationInDays = this.normalizeDurationInDays(dto.durationInDays);
+    }
+
+    if (dto.startDate !== undefined) {
+      updateData.startDate = this.normalizeDate(new Date(dto.startDate));
+    }
+
     if (dto.patientIds !== undefined || dto.patientId !== undefined) {
       const patientIds = this.normalizePatientIds(dto.patientIds, dto.patientId);
       updateData.patientIds = patientIds;
@@ -404,6 +418,12 @@ export class SymptomsService {
           { $set: { isActive: false, status: 'inactive' } },
         )
         .exec();
+    }
+
+    if (updateData.startDate !== undefined || updateData.durationInDays !== undefined) {
+      const nextStartDate = updateData.startDate ?? this.normalizeDate(new Date(existing.startDate ?? new Date()));
+      const nextDurationInDays = updateData.durationInDays ?? this.normalizeDurationInDays(existing.durationInDays ?? 7);
+      updateData.endDate = this.calculateEndDate(nextStartDate, nextDurationInDays);
     }
 
     const updated = await this.symptomModel
@@ -446,6 +466,21 @@ export class SymptomsService {
 
     if (!symptomForm) {
       throw new NotFoundException(`Symptom form ${dto.formId} not found`);
+    }
+
+    const today = this.normalizeDate(new Date());
+    const effectiveStartDate = this.normalizeDate(
+      new Date(symptomForm.startDate ?? new Date()),
+    );
+    const effectiveDurationInDays = this.normalizeDurationInDays(
+      symptomForm.durationInDays ?? 7,
+    );
+    const effectiveEndDate = symptomForm.endDate
+      ? this.normalizeDate(new Date(symptomForm.endDate))
+      : this.calculateEndDate(effectiveStartDate, effectiveDurationInDays);
+
+    if (today > effectiveEndDate) {
+      throw new BadRequestException('Form expired. You can no longer submit symptoms.');
     }
 
     if (!Array.isArray(dto.answers) || dto.answers.length === 0) {
@@ -2177,6 +2212,26 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
     }
 
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+
+  private normalizeDurationInDays(value: unknown): number {
+    if (
+      typeof value !== 'number' ||
+      !Number.isInteger(value) ||
+      value < 1
+    ) {
+      throw new BadRequestException('durationInDays must be a positive integer');
+    }
+
+    return value;
+  }
+
+  private calculateEndDate(startDate: Date, durationInDays: number): Date {
+    return new Date(
+      startDate.getFullYear(),
+      startDate.getMonth(),
+      startDate.getDate() + durationInDays,
+    );
   }
 
   private getStartOfDay(date: Date): Date {
