@@ -124,6 +124,13 @@ function normalizeAuditValue(value: unknown): unknown {
   return out;
 }
 
+function isPatientSubmissionEndpoint(endpoint: string): boolean {
+  return (
+    endpoint.includes('/symptoms/response') ||
+    /\/questionnaires\/[^/]+\/responses(?:\?|$)/.test(endpoint)
+  );
+}
+
 @Injectable()
 export class AuditorInterceptor implements NestInterceptor {
   constructor(
@@ -196,11 +203,11 @@ export class AuditorInterceptor implements NestInterceptor {
     const bodyPatientId = req?.body?.patientId;
     const responsePatientId = data?.patientId;
 
-    if (typeof bodyPatientId === 'string' && endpoint.includes('/symptoms/response')) {
+    if (typeof bodyPatientId === 'string' && isPatientSubmissionEndpoint(endpoint)) {
       return bodyPatientId;
     }
 
-    if (typeof responsePatientId === 'string' && endpoint.includes('/symptoms/response')) {
+    if (typeof responsePatientId === 'string' && isPatientSubmissionEndpoint(endpoint)) {
       return responsePatientId;
     }
 
