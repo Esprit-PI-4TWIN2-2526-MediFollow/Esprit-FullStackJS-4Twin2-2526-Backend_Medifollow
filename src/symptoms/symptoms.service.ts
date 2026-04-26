@@ -142,6 +142,7 @@ type SymptomVitalsView = {
   bloodPressure: string | null;
   heartRate: number | null;
   temperature: number | null;
+  spo2: number | null;
   weight: number | null;
 };
 
@@ -194,6 +195,29 @@ type PatientAssignmentStatus = {
   _id: string;
   name: string;
   isAssigned: boolean;
+};
+
+type TimeSeriesPoint = {
+  date: Date;
+  value: number;
+};
+
+type BloodPressureSeriesPoint = {
+  date: Date;
+  systolic: number;
+  diastolic: number;
+};
+
+type VitalsHistoryResponse = {
+  temperature: TimeSeriesPoint[];
+  heartRate: TimeSeriesPoint[];
+  bloodPressure: BloodPressureSeriesPoint[];
+  spo2: TimeSeriesPoint[];
+};
+
+type QuestionLookupItem = {
+  label: string;
+  category: string | null;
 };
 
 @Injectable()
@@ -1101,6 +1125,84 @@ Improved response (single sentence, professional tone):
     return responses.map((response) => this.formatNurseResponse(response, patient));
   }
 
+  async getVitalsHistoryForDoctor(
+    authUser: AuthUserPayload,
+    patientId: string,
+  ): Promise<VitalsHistoryResponse> {
+    const doctor = await this.getScopedStaffUser(authUser, ['doctor']);
+    const patient = await this.getPatientById(patientId, doctor.department);
+    const responses = await this.symptomResponseModel
+      .find({ patientId: patient._id.toString() })
+      .populate('symptomFormId')
+      .sort({ createdAt: 1, _id: 1 })
+      .exec();
+
+    const history: VitalsHistoryResponse = {
+      temperature: [],
+      heartRate: [],
+      bloodPressure: [],
+      spo2: [],
+    };
+
+    for (const response of responses) {
+      const date = response.createdAt ?? response.date;
+      if (!date) {
+        continue;
+      }
+
+      const questionLookup = this.buildQuestionLookup(response);
+
+      let temperature = this.toNullableNumber(response.vitals?.temperature ?? null);
+      let heartRate = this.toNullableNumber(response.vitals?.heartRate ?? null);
+      let spo2 = this.toNullableNumber(response.vitals?.spo2 ?? null);
+      let bloodPressure = this.parseBloodPressure(response.vitals?.bloodPressure ?? null);
+
+      for (const answer of response.answers ?? []) {
+        const meta = questionLookup.get(answer.questionId);
+        const label = meta?.label ?? '';
+        const category = meta?.category ?? null;
+
+        if (temperature === null && this.isTemperatureQuestion(label, category)) {
+          temperature = this.toNullableNumber(answer.value);
+        }
+
+        if (heartRate === null && this.isHeartRateQuestion(label, category)) {
+          heartRate = this.toNullableNumber(answer.value);
+        }
+
+        if (bloodPressure === null && this.isBloodPressureQuestion(label, category)) {
+          bloodPressure = this.parseBloodPressure(answer.value);
+        }
+
+        if (spo2 === null && this.isSpo2Question(label, category)) {
+          spo2 = this.toNullableNumber(answer.value);
+        }
+      }
+
+      if (temperature !== null) {
+        history.temperature.push({ date, value: temperature });
+      }
+
+      if (heartRate !== null) {
+        history.heartRate.push({ date, value: heartRate });
+      }
+
+      if (bloodPressure !== null) {
+        history.bloodPressure.push({
+          date,
+          systolic: bloodPressure.systolic,
+          diastolic: bloodPressure.diastolic,
+        });
+      }
+
+      if (spo2 !== null) {
+        history.spo2.push({ date, value: spo2 });
+      }
+    }
+
+    return history;
+  }
+
   // ── AI Question Generation ────────────────────────────────────────────────────
 
   async generateQuestions(dto: GenerateSymptomDto): Promise<{ questions: FrontendGeneratedQuestion[] }> {
@@ -1956,6 +2058,7 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
         bloodPressure: response.vitals?.bloodPressure ?? null,
         heartRate: response.vitals?.heartRate ?? null,
         temperature: response.vitals?.temperature ?? null,
+        spo2: response.vitals?.spo2 ?? null,
         weight: response.vitals?.weight ?? null,
       },
       answers: response.answers.map((answer) => ({
@@ -2011,6 +2114,99 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  private buildQuestionLookup(response: SymptomResponseDocument): Map<string, QuestionLookupItem> {
+    const form =
+      response.symptomFormId &&
+      typeof response.symptomFormId === 'object' &&
+      'questions' in response.symptomFormId
+        ? (response.symptomFormId as unknown as Symptom)
+        : null;
+
+    const questionLookup = new Map<string, QuestionLookupItem>();
+
+    for (const question of form?.questions ?? []) {
+      const questionId = question._id?.toString();
+      if (!questionId) {
+        continue;
+      }
+
+      questionLookup.set(questionId, {
+        label: (question.label ?? '').toLowerCase(),
+        category: question.category ?? null,
+      });
+    }
+
+    return questionLookup;
+  }
+
+  private isVitalCategory(category: string | null): boolean {
+    return (category ?? '').toLowerCase() === 'vital_parameters';
+  }
+
+  private isTemperatureQuestion(label: string, category: string | null): boolean {
+    if (this.isVitalCategory(category)) {
+      return label.includes('temp');
+    }
+
+    return label.includes('temp') || label.includes('fever');
+  }
+
+  private isHeartRateQuestion(label: string, category: string | null): boolean {
+    if (this.isVitalCategory(category)) {
+      return label.includes('heart rate') || label.includes('pulse') || label.includes('bpm');
+    }
+
+    return label.includes('heart rate') || label.includes('pulse') || label.includes('bpm');
+  }
+
+  private isBloodPressureQuestion(label: string, category: string | null): boolean {
+    if (this.isVitalCategory(category)) {
+      return label.includes('blood pressure') || label === 'bp' || label.includes('tension');
+    }
+
+    return label.includes('blood pressure') || label === 'bp' || label.includes('tension');
+  }
+
+  private isSpo2Question(label: string, category: string | null): boolean {
+    if (this.isVitalCategory(category)) {
+      return (
+        label.includes('spo2') ||
+        label.includes('sao2') ||
+        label.includes('oxygen') ||
+        label.includes('saturation')
+      );
+    }
+
+    return (
+      label.includes('spo2') ||
+      label.includes('sao2') ||
+      label.includes('oxygen') ||
+      label.includes('saturation')
+    );
+  }
+
+  private parseBloodPressure(
+    value: string | number | boolean | string[] | null | undefined,
+  ): { systolic: number; diastolic: number } | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const match = value.trim().match(/^(\d{2,3})\s*[/\-]\s*(\d{2,3})$/);
+    if (!match) {
+      return null;
+    }
+
+    const systolic = Number.parseInt(match[1], 10);
+    const diastolic = Number.parseInt(match[2], 10);
+
+    if (!Number.isFinite(systolic) || !Number.isFinite(diastolic)) {
+      return null;
+    }
+
+    return { systolic, diastolic };
+  }
+
   private extractVitals(
     symptomForm: Symptom,
     answers: Array<{ questionId: string; value: string | number | boolean | string[] | null }>,
@@ -2023,6 +2219,7 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
       bloodPressure: null,
       heartRate: null,
       temperature: null,
+      spo2: null,
       weight: null,
     };
 
@@ -2043,6 +2240,13 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
 
       if (vitals.temperature === null && label.includes('temp')) {
         vitals.temperature = this.toNullableNumber(answer.value);
+      }
+
+      if (
+        vitals.spo2 === null &&
+        (label.includes('spo2') || label.includes('oxygen') || label.includes('saturation'))
+      ) {
+        vitals.spo2 = this.toNullableNumber(answer.value);
       }
 
       if (vitals.weight === null && label.includes('weight')) {
