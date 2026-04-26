@@ -26,6 +26,9 @@ export class SymptomVitals {
   temperature?: number | null;
 
   @Prop({ type: Number, default: null })
+  spo2?: number | null;
+
+  @Prop({ type: Number, default: null })
   weight?: number | null;
 }
 

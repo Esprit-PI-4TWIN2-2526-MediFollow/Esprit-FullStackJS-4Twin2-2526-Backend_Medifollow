@@ -142,6 +142,7 @@ type SymptomVitalsView = {
   bloodPressure: string | null;
   heartRate: number | null;
   temperature: number | null;
+  spo2: number | null;
   weight: number | null;
 };
 
@@ -1153,7 +1154,7 @@ Improved response (single sentence, professional tone):
 
       let temperature = this.toNullableNumber(response.vitals?.temperature ?? null);
       let heartRate = this.toNullableNumber(response.vitals?.heartRate ?? null);
-      let spo2: number | null = null;
+      let spo2 = this.toNullableNumber(response.vitals?.spo2 ?? null);
       let bloodPressure = this.parseBloodPressure(response.vitals?.bloodPressure ?? null);
 
       for (const answer of response.answers ?? []) {
@@ -2057,6 +2058,7 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
         bloodPressure: response.vitals?.bloodPressure ?? null,
         heartRate: response.vitals?.heartRate ?? null,
         temperature: response.vitals?.temperature ?? null,
+        spo2: response.vitals?.spo2 ?? null,
         weight: response.vitals?.weight ?? null,
       },
       answers: response.answers.map((answer) => ({
@@ -2217,6 +2219,7 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
       bloodPressure: null,
       heartRate: null,
       temperature: null,
+      spo2: null,
       weight: null,
     };
 
@@ -2237,6 +2240,13 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
 
       if (vitals.temperature === null && label.includes('temp')) {
         vitals.temperature = this.toNullableNumber(answer.value);
+      }
+
+      if (
+        vitals.spo2 === null &&
+        (label.includes('spo2') || label.includes('oxygen') || label.includes('saturation'))
+      ) {
+        vitals.spo2 = this.toNullableNumber(answer.value);
       }
 
       if (vitals.weight === null && label.includes('weight')) {
