@@ -128,6 +128,6 @@ docker inspect medifollow-mongo --format "{{.NetworkSettings.Networks.bridge.IPA
 // un petit test dans le CMD docker exec -it medifollow-mongo mongosh medifollow --eval "db.roles.countDocuments()"
 
 
-SD
+SDs
 
 // test unitaire de module : Service npx jest src/service/ --coverage --coverageReporters=text
