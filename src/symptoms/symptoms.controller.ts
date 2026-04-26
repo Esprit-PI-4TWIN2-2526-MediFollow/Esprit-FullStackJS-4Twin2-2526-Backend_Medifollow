@@ -180,6 +180,12 @@ export class SymptomsController {
     return this.service.getValidatedSymptomsForDoctor(req.user, patientId);
   }
 
+  @Get('doctor/patient/:patientId/vitals-history')
+  @UseGuards(JwtAuthGuard)
+  getVitalsHistoryForDoctor(@Param('patientId') patientId: string, @Req() req) {
+    return this.service.getVitalsHistoryForDoctor(req.user, patientId);
+  }
+
   @Post('generate')
   generate(@Body() dto: GenerateSymptomDto) {
     console.log('BODY RECEIVED:', dto);
