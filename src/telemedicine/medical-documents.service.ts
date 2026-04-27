@@ -70,7 +70,7 @@ export class MedicalDocumentsService {
       createdAt: new Date(),
     });
 
-    // Envoyer notification au patient
+    // Send notification to patient
     try {
       await this.notificationService.sendDocumentUploaded(
         patient.email,
@@ -219,7 +219,7 @@ export class MedicalDocumentsService {
       throw new NotFoundException(`Document ${id} not found`);
     }
 
-    // Supprimer de Cloudinary
+    // Delete from Cloudinary
     try {
       const publicId = this.extractPublicIdFromUrl(document.fileUrl);
       await this.cloudinaryService.deleteFile(publicId);
