@@ -1,10 +1,6 @@
 pipeline {
     agent any
 
-    environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
-    }
-
     stages {
 
         stage('Checkout') {
@@ -14,33 +10,28 @@ pipeline {
         }
 
         stage('Docker Build & Push') {
-    agent {
-        docker {
-            image 'docker:24.0.5'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    docker build -t yahyakaroui/medifollow-backend:${BUILD_NUMBER} .
+                    docker push yahyakaroui/medifollow-backend:${BUILD_NUMBER}
+                    '''
+                }
+            }
         }
-    }
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'dockerhub-credentials',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_PASS'
-        )]) {
-            sh '''
-            docker login -u $DOCKER_USER -p $DOCKER_PASS
-            docker build -t yahyakaroui/medifollow-backend:latest .
-            docker push yahyakaroui/medifollow-backend:latest
-            '''
-        }
-    }
-}
 
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
                 export KUBECONFIG=$HOME/.kube/config
-                kubectl apply -f deployment.yaml
-                kubectl apply -f service.yaml
+                kubectl set image deployment/medifollow-backend \
+                medifollow-backend=yahyakaroui/medifollow-backend:${BUILD_NUMBER}
+
                 kubectl rollout restart deployment medifollow-backend
                 '''
             }
