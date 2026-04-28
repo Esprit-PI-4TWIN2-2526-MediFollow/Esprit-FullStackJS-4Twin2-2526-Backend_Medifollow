@@ -2,8 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USERNAME = credentials('dockerhub-credentials').username
-        DOCKERHUB_PASSWORD = credentials('dockerhub-credentials').password
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
     }
 
     stages {
@@ -17,13 +16,8 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 sh '''
-                echo "Login to DockerHub"
-                docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD
-
-                echo "Build image"
+                docker login -u $DOCKERHUB_CREDENTIALS_USR -p $DOCKERHUB_CREDENTIALS_PSW
                 docker build -t yahyakaroui/medifollow-backend:latest .
-
-                echo "Push image"
                 docker push yahyakaroui/medifollow-backend:latest
                 '''
             }
@@ -33,10 +27,8 @@ pipeline {
             steps {
                 sh '''
                 export KUBECONFIG=$HOME/.kube/config
-
                 kubectl apply -f deployment.yaml
                 kubectl apply -f service.yaml
-
                 kubectl rollout restart deployment medifollow-backend
                 '''
             }
