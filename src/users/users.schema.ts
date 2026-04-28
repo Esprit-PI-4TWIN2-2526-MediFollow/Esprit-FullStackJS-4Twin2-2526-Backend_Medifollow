@@ -30,7 +30,7 @@ export class User {
   @Prop({ required: false })
   specialization: string;
 
-  @IsEnum(['MD — Doctor of Medicine ','DES — Diploma of Specialized Studies','DESC — Diploma of Complementary Specialized Studies'])
+  @IsEnum(['MD — Doctor of Medicine ', 'DES — Diploma of Specialized Studies', 'DESC — Diploma of Complementary Specialized Studies'])
   @Prop({ required: false })
   diploma: string;
 
@@ -106,6 +106,9 @@ export class User {
 
   @Prop({ required: false })
   faceImageUrl: string;
+
+  @Prop({ required: false })
+  lastLogin: Date;
 
 }
 

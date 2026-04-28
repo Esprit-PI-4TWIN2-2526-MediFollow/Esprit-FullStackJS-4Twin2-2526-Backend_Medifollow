@@ -197,6 +197,8 @@ export class AuthService {
         user.mustChangePassword = false;
         user.actif = true;
         user.activationExpiresAt = new Date(now.setFullYear(now.getFullYear() + 1));
+        user.lastLogin = new Date();
+
         await user.save();
 
         const roleValue =
