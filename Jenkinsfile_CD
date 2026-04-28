@@ -14,14 +14,26 @@ pipeline {
         }
 
         stage('Docker Build & Push') {
-            steps {
-                sh '''
-                docker login -u $DOCKERHUB_CREDENTIALS_USR -p $DOCKERHUB_CREDENTIALS_PSW
-                docker build -t yahyakaroui/medifollow-backend:latest .
-                docker push yahyakaroui/medifollow-backend:latest
-                '''
-            }
+    agent {
+        docker {
+            image 'docker:24.0.5'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
         }
+    }
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'dockerhub-credentials',
+            usernameVariable: 'DOCKER_USER',
+            passwordVariable: 'DOCKER_PASS'
+        )]) {
+            sh '''
+            docker login -u $DOCKER_USER -p $DOCKER_PASS
+            docker build -t yahyakaroui/medifollow-backend:latest .
+            docker push yahyakaroui/medifollow-backend:latest
+            '''
+        }
+    }
+}
 
         stage('Deploy to Kubernetes') {
             steps {
