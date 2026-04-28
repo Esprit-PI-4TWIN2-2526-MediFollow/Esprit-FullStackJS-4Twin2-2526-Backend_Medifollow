@@ -100,7 +100,7 @@ yahya
 //pour statistique installez:
 npm install chart.js ng2-charts@5 --legacy-peer-deps
 
-sdf
+sdfqsdqsd
 //install twilio
  npm install twilio
 
