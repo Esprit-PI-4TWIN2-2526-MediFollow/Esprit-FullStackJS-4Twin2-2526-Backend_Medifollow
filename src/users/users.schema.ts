@@ -110,3 +110,9 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Performance: Database indexes for faster queries
+UserSchema.index({ email: 1 }, { unique: true });  // Unique email lookup
+UserSchema.index({ role: 1 });                      // Filter by role
+UserSchema.index({ primaryDoctor: 1 });             // Find patients by doctor
+UserSchema.index({ createdAt: -1 });                // Recent users

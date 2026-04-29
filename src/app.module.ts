@@ -43,7 +43,12 @@ import { NotificationsModule } from './notifications/notifications.module';
       useFactory: (config: ConfigService) => ({
         uri: config.get<string>('MONGODB_URI'),
         dbName: config.get<string>('MONGODB_NAME'),
-
+        // Performance: Connection pooling
+        maxPoolSize: 10,
+        minPoolSize: 2,
+        socketTimeoutMS: 45000,
+        serverSelectionTimeoutMS: 5000,
+        family: 4,
       }),
       inject: [ConfigService],
       

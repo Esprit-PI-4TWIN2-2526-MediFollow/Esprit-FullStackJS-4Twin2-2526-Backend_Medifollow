@@ -77,4 +77,10 @@ export class SymptomResponse {
 }
 
 export const SymptomResponseSchema = SchemaFactory.createForClass(SymptomResponse);
-SymptomResponseSchema.index({ patientId: 1, createdAt: 1 });
+
+// Performance: Database indexes for faster queries
+SymptomResponseSchema.index({ patientId: 1, date: -1 });  // Patient responses by date
+SymptomResponseSchema.index({ symptomFormId: 1 });         // Responses by form
+SymptomResponseSchema.index({ validated: 1 });             // Filter by validation status
+SymptomResponseSchema.index({ createdAt: -1 });            // Recent responses
+SymptomResponseSchema.index({ patientId: 1, validated: 1 }); // Patient + validation status
