@@ -7,6 +7,18 @@ import * as crypto from 'crypto';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
 //(global as any).crypto = crypto;
+
+/**
+ * Disable console.log in production for better performance
+ * Keeps console.error and console.warn for monitoring
+ */
+if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEBUG_LOGS !== 'true') {
+  console.log = () => {};
+  console.debug = () => {};
+  console.info = () => {};
+  // Keep console.error and console.warn for production monitoring
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe());
@@ -46,7 +58,13 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Application is running on: ${await app.getUrl()}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-}
+  
+  // These will only show in development
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`Application is running on: ${await app.getUrl()}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  } else {
+    // In production, use console.error so it still shows
+    console.error(`✅ MediFollow API started on port ${port}`);
+  }}
 bootstrap();
