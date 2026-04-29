@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import 'reflect-metadata';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import rateLimit from 'express-rate-limit';
 import compression from 'compression';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -9,11 +9,17 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 /**
  * Disable console.log in production for better performance
  * Keeps console.error and console.warn for monitoring
+ * MUST BE EXECUTED BEFORE ANY OTHER CODE
  */
 if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEBUG_LOGS !== 'true') {
+  // Disable all console methods except error and warn
   console.log = () => {};
   console.debug = () => {};
   console.info = () => {};
+  
+  // Also disable NestJS default logger for log/debug/verbose levels
+  Logger.overrideLogger(['error', 'warn']);
+  
   // Keep console.error and console.warn for production monitoring
 }
 
