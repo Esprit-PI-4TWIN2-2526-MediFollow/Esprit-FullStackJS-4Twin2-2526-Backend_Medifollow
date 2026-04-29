@@ -1,13 +1,17 @@
 pipeline {
     agent any
 
-    stages {
+    parameters {
+        string(name: 'DOCKER_IMAGE_TAG', defaultValue: 'latest', description: 'Tag pushed by CI')
+    }
 
-        stage('Checkout') {
-            steps {
-                git branch: 'main', url: 'https://github.com/Esprit-PI-4TWIN2-2526-MediFollow/Esprit-FullStackJS-4Twin2-2526-Backend_Medifollow.git'
-            }
-        }
+    environment {
+        IMAGE      = "yahyakaroui/medifollow-backend"
+        KUBECONFIG = "/root/.kube/config"
+        NAMESPACE  = "default"
+    }
+
+    stages {
 
         stage('Docker Build & Push') {
             steps {
@@ -17,30 +21,98 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
-                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                    docker build -t yahyakaroui/medifollow-backend:${BUILD_NUMBER} .
-                    docker push yahyakaroui/medifollow-backend:${BUILD_NUMBER}
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker build -t ${IMAGE}:${DOCKER_IMAGE_TAG} .
+                        docker push ${IMAGE}:${DOCKER_IMAGE_TAG}
+                        docker logout
                     '''
                 }
+            }
+        }
+
+        stage('Verify Kubernetes Access') {
+            steps {
+                sh '''
+                    echo "=== kubectl version ==="
+                    kubectl version --client
+
+                    echo "=== cluster info ==="
+                    kubectl cluster-info --request-timeout=10s
+
+                    echo "=== nodes ==="
+                    kubectl get nodes -o wide
+                '''
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
-                export KUBECONFIG=$HOME/.kube/config
-                kubectl set image deployment/medifollow-backend \
-                medifollow-backend=yahyakaroui/medifollow-backend:${BUILD_NUMBER}
+                    # Check if deployment exists, create it if not
+                    if ! kubectl get deployment medifollow-backend -n ${NAMESPACE} &>/dev/null; then
+                        echo "⚠️  Deployment not found — creating it..."
+                        kubectl create deployment medifollow-backend \
+                            --image=${IMAGE}:${DOCKER_IMAGE_TAG} \
+                            -n ${NAMESPACE}
 
-                kubectl rollout restart deployment medifollow-backend
+                        kubectl expose deployment medifollow-backend \
+                            --port=3000 \
+                            --type=ClusterIP \
+                            -n ${NAMESPACE} || true
+                    else
+                        echo "✅ Deployment exists — updating image..."
+                        kubectl set image deployment/medifollow-backend \
+                            medifollow-backend=${IMAGE}:${DOCKER_IMAGE_TAG} \
+                            -n ${NAMESPACE}
+                    fi
+
+                    # Force fresh rollout
+                    kubectl rollout restart deployment/medifollow-backend \
+                        -n ${NAMESPACE}
+
+                    # Wait until rollout is done (max 3 min)
+                    kubectl rollout status deployment/medifollow-backend \
+                        -n ${NAMESPACE} --timeout=180s
                 '''
             }
         }
 
-        stage('Verify') {
+        stage('Verify Deployment') {
             steps {
-                sh 'kubectl get pods'
+                sh '''
+                    echo "=== Pods ==="
+                    kubectl get pods -n ${NAMESPACE} -o wide \
+                        -l app=medifollow-backend
+
+                    echo "=== Deployment ==="
+                    kubectl get deployment medifollow-backend -n ${NAMESPACE}
+
+                    echo "=== Service ==="
+                    kubectl get service medifollow-backend -n ${NAMESPACE} || true
+
+                    echo "=== Recent Events ==="
+                    kubectl get events -n ${NAMESPACE} \
+                        --sort-by=.lastTimestamp | tail -20
+                '''
             }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ ${IMAGE}:${DOCKER_IMAGE_TAG} deployed successfully."
+        }
+        failure {
+            sh '''
+                echo "❌ Deployment failed — diagnostics:"
+                kubectl describe deployment medifollow-backend -n ${NAMESPACE} || true
+                kubectl get pods -n ${NAMESPACE} -o wide || true
+                kubectl logs -l app=medifollow-backend \
+                    -n ${NAMESPACE} --tail=100 || true
+            '''
+        }
+        always {
+            sh 'docker rmi ${IMAGE}:${DOCKER_IMAGE_TAG} || true'
         }
     }
 }
