@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { CreateQuestionDto } from './create-question.dto';
 
 export class UpdateSymptomDto {
@@ -14,6 +14,16 @@ export class UpdateSymptomDto {
   @IsString()
   @IsOptional()
   medicalService?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  durationInDays?: number;
+
+  @IsDateString()
+  @IsOptional()
+  startDate?: string;
 
   @IsArray()
   @IsOptional()

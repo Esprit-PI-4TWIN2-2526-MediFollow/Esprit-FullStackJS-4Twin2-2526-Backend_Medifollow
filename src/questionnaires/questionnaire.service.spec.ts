@@ -7,6 +7,8 @@ import { NotFoundException } from '@nestjs/common';
 import { QuestionnaireService } from './questionnaire.service';
 import { Questionnaire, QuestionnaireDocument } from './schemas/questionnaire.schema';
 import { QuestionnaireResponse, QuestionnaireResponseDocument } from './schemas/questionnaire-response.schema';
+import { NotificationsService } from 'src/notifications/notifications.service';
+import { User } from 'src/users/users.schema';
 import { CreateQuestionnaireDto } from './dto/create-questionnaire.dto';
 import { UpdateQuestionnaireDto } from './dto/update-questionnaire.dto';
 import { CreateQuestionDto } from './dto/create-question.dto';
@@ -16,6 +18,8 @@ describe('QuestionnaireService', () => {
   let service: QuestionnaireService;
   let questionnaireModel: Model<QuestionnaireDocument>;
   let responseModel: Model<QuestionnaireResponseDocument>;
+  let userModel: any;
+  let notificationsService: { create: jest.Mock };
 
   const mockQuestionnaire = {
     _id: new Types.ObjectId(),
@@ -63,6 +67,15 @@ describe('QuestionnaireService', () => {
       exec: jest.fn(),
     });
 
+    userModel = {
+      findById: jest.fn(),
+      findOne: jest.fn(),
+    };
+
+    notificationsService = {
+      create: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         QuestionnaireService,
@@ -73,6 +86,14 @@ describe('QuestionnaireService', () => {
         {
           provide: getModelToken(QuestionnaireResponse.name),
           useValue: mockResponseModel,
+        },
+        {
+          provide: getModelToken(User.name),
+          useValue: userModel,
+        },
+        {
+          provide: NotificationsService,
+          useValue: notificationsService,
         },
       ],
     }).compile();

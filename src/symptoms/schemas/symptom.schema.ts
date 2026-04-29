@@ -15,6 +15,15 @@ export class Symptom {
   @Prop({ required: false, default: '' })
   medicalService?: string;
 
+  @Prop({ required: false, default: 7 })
+  durationInDays?: number;
+
+  @Prop({ required: false, type: Date, default: Date.now })
+  startDate?: Date;
+
+  @Prop({ required: false, type: Date })
+  endDate?: Date;
+
   @Prop({ type: [String], default: [] })
   patientIds: string[];
 
