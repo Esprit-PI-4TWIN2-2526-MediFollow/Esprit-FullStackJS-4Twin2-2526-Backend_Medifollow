@@ -12,8 +12,6 @@ services:
         value: production
       - key: ENABLE_DEBUG_LOGS
         value: false
-      - key: ENABLE_ID_ENCRYPTION
-        value: true
       - key: PORT
         value: 3000
       - key: MONGODB_URI
