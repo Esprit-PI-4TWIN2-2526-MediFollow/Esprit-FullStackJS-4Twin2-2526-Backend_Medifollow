@@ -3,10 +3,8 @@ import { AppModule } from './app.module';
 import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import rateLimit from 'express-rate-limit';
-import * as crypto from 'crypto';
+import compression from 'compression';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-
-//(global as any).crypto = crypto;
 
 /**
  * Disable console.log in production for better performance
@@ -21,6 +19,10 @@ if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEBUG_LOGS !== '
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  
+  // Enable compression for all responses (gzip)
+  app.use(compression());
+  
   app.useGlobalPipes(new ValidationPipe());
 
   // CORS configuration with environment variable
