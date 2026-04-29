@@ -5,6 +5,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import rateLimit from 'express-rate-limit';
 import compression from 'compression';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { IdDecoderInterceptor } from './common/interceptors/id-decoder.interceptor';
 
 /**
  * Disable console.log in production for better performance
@@ -28,6 +29,9 @@ async function bootstrap() {
   
   // Enable compression for all responses (gzip)
   app.use(compression());
+  
+  // Global ID decoder interceptor (only decodes incoming IDs, no response encoding)
+  app.useGlobalInterceptors(new IdDecoderInterceptor());
   
   app.useGlobalPipes(new ValidationPipe());
 
