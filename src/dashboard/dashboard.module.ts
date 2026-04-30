@@ -10,6 +10,7 @@ import { QuestionnaireResponse, QuestionnaireResponseSchema } from 'src/question
 import { Role, RoleSchema } from 'src/role/schemas/role.schema';
 import { SymptomResponse, SymptomResponseSchema } from 'src/symptoms/schemas/symptom-response.schema';
 import { Symptom, SymptomSchema } from 'src/symptoms/schemas/symptom.schema';
+import { Alert, AlertSchema } from 'src/alert/schemas/alert.schema';
 
 @Module({
     imports: [
@@ -21,6 +22,7 @@ import { Symptom, SymptomSchema } from 'src/symptoms/schemas/symptom.schema';
             { name: Symptom.name,               schema: SymptomSchema },
             { name: SymptomResponse.name,       schema: SymptomResponseSchema },
             { name: Role.name,                  schema: RoleSchema },
+            { name: Alert.name,                 schema: AlertSchema },
         ]),
     ],
     controllers: [DashboardController],

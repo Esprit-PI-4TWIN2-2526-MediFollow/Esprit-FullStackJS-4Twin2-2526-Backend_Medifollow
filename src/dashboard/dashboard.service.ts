@@ -9,6 +9,7 @@ import { SymptomResponse } from 'src/symptoms/schemas/symptom-response.schema';
 import { Role } from 'src/role/schemas/role.schema';
 import Groq from 'groq-sdk';
 import { QuestionnaireResponse } from 'src/questionnaires/schemas/questionnaire-response.schema';
+import { Alert } from 'src/alert/schemas/alert.schema';
 
 type AIInsight = {
     type: string;
@@ -19,6 +20,7 @@ type AIInsight = {
 @Injectable()
 export class DashboardService {
     private groqApi: Groq;
+    private readonly dashboardTimezone = 'Africa/Tunis';
 
     constructor(
         @InjectModel(User.name) private userModel: Model<User>,
@@ -28,8 +30,27 @@ export class DashboardService {
         @InjectModel(Symptom.name) private symptomModel: Model<Symptom>,
         @InjectModel(SymptomResponse.name) private symptomResponseModel: Model<SymptomResponse>,
         @InjectModel(Role.name) private roleModel: Model<Role>,
+        @InjectModel(Alert.name) private alertModel: Model<Alert>,
     ) {
         this.groqApi = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    }
+
+    private getLocalDayStart(date = new Date()) {
+        const localDate = new Date(date);
+        localDate.setHours(0, 0, 0, 0);
+        return localDate;
+    }
+
+    private getDaysAgoStart(days: number, from = new Date()) {
+        const date = this.getLocalDayStart(from);
+        date.setDate(date.getDate() - days);
+        return date;
+    }
+
+    private getDateKey(date: Date) {
+        return date.toLocaleDateString('en-CA', {
+            timeZone: this.dashboardTimezone,
+        });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -40,10 +61,9 @@ async getSummary() {
     const weekAgo = new Date(now);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = this.getDaysAgoStart(7);
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = this.getLocalDayStart();
 
     const allRoles = await this.roleModel.find().select('_id name').lean().exec();
 
@@ -68,6 +88,13 @@ async getSummary() {
     const doctorFilter = getRoleFilter('doctor');
     const nurseFilter = getRoleFilter('nurse');
     const coordinatorFilter = getRoleFilter('coordinator');
+    const inactiveSinceFilter = {
+        $or: [
+            { lastLogin: { $lt: sevenDaysAgo } },
+            { lastLogin: null },
+            { lastLogin: { $exists: false } },
+        ],
+    };
 
     const [
         totalPatients,
@@ -77,6 +104,7 @@ async getSummary() {
         totalCoordinators,
         totalActiveUsers,
         inactiveUsers7d,
+        inactivePatients7d,
         activeServices,
         inactiveServices,
         emergencyServices,
@@ -95,7 +123,14 @@ async getSummary() {
         this.userModel.countDocuments({ $or: nurseFilter.$or, actif: true }),
         this.userModel.countDocuments({ $or: coordinatorFilter.$or, actif: true }),
         this.userModel.countDocuments({ actif: true }),
-        this.userModel.countDocuments({ actif: true, lastLogin: { $lt: sevenDaysAgo } }),
+        this.userModel.countDocuments({ actif: true, ...inactiveSinceFilter }),
+        this.userModel.countDocuments({
+            actif: true,
+            $and: [
+                { $or: patientFilter.$or },
+                inactiveSinceFilter,
+            ],
+        }),
         this.serviceModel.countDocuments({ statut: 'ACTIF', deletedAt: null }),
         this.serviceModel.countDocuments({ statut: 'INACTIF', deletedAt: null }),
         this.serviceModel.countDocuments({ estUrgence: true, deletedAt: null }),
@@ -105,7 +140,10 @@ async getSummary() {
         this.symptomModel.countDocuments(),
         this.symptomModel.countDocuments({ isActive: true }),
         this.symptomResponseModel.countDocuments({ validated: false }),
-        this.symptomResponseModel.countDocuments({ createdAt: { $gte: todayStart } }),
+        Promise.all([
+            this.symptomResponseModel.countDocuments({ createdAt: { $gte: todayStart } }),
+            this.questionnaireResponseModel.countDocuments({ createdAt: { $gte: todayStart } }),
+        ]).then(([todaySymptoms, todayQuestionnaires]) => todaySymptoms + todayQuestionnaires),
         this.symptomResponseModel.countDocuments(), // ✅ TOTAL SYMPTOM RESPONSES
     ]);
 
@@ -123,39 +161,66 @@ async getSummary() {
         }),
     ]);
 
-    const respondedToday = new Set([
+    const respondedTodayIds = [
         ...symptomToday,
         ...questToday
-    ].map(id => id?.toString()).filter(Boolean)).size;
+    ].map(id => id?.toString()).filter(Boolean);
 
     const [symptomEver, questEver] = await Promise.all([
         this.symptomResponseModel.distinct('patientId'),
         this.questionnaireResponseModel.distinct('patientId'),
     ]);
 
-    const everResponded = new Set([
+    const everRespondedIds = [
         ...symptomEver,
         ...questEver
-    ].map(id => id?.toString()).filter(Boolean)).size;
+    ].map(id => id?.toString()).filter(Boolean);
 
     const totalQuestResponses = await this.questionnaireResponseModel.countDocuments();
 
-    const todayRate =
-        totalPatients > 0
-            ? Math.round((respondedToday / totalPatients) * 100)
-            : 0;
+    const [respondedToday, everResponded] = await Promise.all([
+        respondedTodayIds.length > 0
+            ? this.userModel.countDocuments({
+                _id: { $in: Array.from(new Set(respondedTodayIds)) },
+                $or: patientFilter.$or,
+                actif: true,
+            })
+            : 0,
+        everRespondedIds.length > 0
+            ? this.userModel.countDocuments({
+                _id: { $in: Array.from(new Set(everRespondedIds)) },
+                $or: patientFilter.$or,
+                actif: true,
+            })
+            : 0,
+    ]);
+    const highRiskPatients = (await this.getHighRiskPatients()).length;
+
+   const todayRate = totalPatients > 0
+    ? Math.min(100, Math.round((respondedToday / totalPatients) * 100))
+    : 0;
+
 
     const overallRate =
         totalPatients > 0
-            ? Math.round((everResponded / totalPatients) * 100)
+            ? Math.min(100, Math.round((everResponded / totalPatients) * 100))
             : 0;
 
     return {
-        users: { total: totalActiveUsers, inactive7d: inactiveUsers7d },
+        users: {
+            total: totalActiveUsers,
+            inactive7d: inactivePatients7d,
+            inactivePatients7d,
+            inactiveUsers7d,
+        },
 
         patients: {
             total: totalPatients,
-            newThisWeek: newPatientsThisWeek
+            newThisWeek: newPatientsThisWeek,
+            inactive7d: inactivePatients7d,
+            inactivePatients7d,
+            highRisk: highRiskPatients,
+            highRiskPatients,
         },
 
         staff: {
@@ -192,6 +257,7 @@ async getSummary() {
             completedToday,
             everResponded,
             totalPatients,
+            highRiskPatients,
         },
     };
 }
@@ -205,9 +271,8 @@ async getFollowupActivity(range: string) {
     const days = range === '30d' ? 30 : range === '90d' ? 90 : 7;
 
     // ✅ FIX: date propre sans bug timezone
-    const since = new Date();
+    const since = this.getLocalDayStart();
     since.setDate(since.getDate() - days);
-    since.setHours(0, 0, 0, 0);
 
     const [newUsersPerDay, responsesByDay] = await Promise.all([
         this.userModel.aggregate([
@@ -218,7 +283,7 @@ async getFollowupActivity(range: string) {
                         $dateToString: {
                             format: '%Y-%m-%d',
                             date: '$createdAt',
-                            timezone: 'UTC'
+                            timezone: this.dashboardTimezone
                         }
                     },
                     newPatients: { $sum: 1 },
@@ -234,37 +299,61 @@ async getFollowupActivity(range: string) {
             },
         ]),
 
-        this.symptomResponseModel.aggregate([
-            { $match: { createdAt: { $gte: since } } },
-            {
-                $group: {
-                    _id: {
-                        $dateToString: {
-                            format: '%Y-%m-%d',
-                            date: '$createdAt',
-                            timezone: 'UTC'
-                        }
+        Promise.all([
+            this.symptomResponseModel.aggregate([
+                { $match: { createdAt: { $gte: since } } },
+                {
+                    $group: {
+                        _id: {
+                            $dateToString: {
+                                format: '%Y-%m-%d',
+                                date: '$createdAt',
+                                timezone: this.dashboardTimezone
+                            }
+                        },
+                        count: { $sum: 1 },
                     },
-                    submittedResponses: { $sum: 1 },
                 },
-            },
-            { $sort: { _id: 1 } },
-            {
-                $project: {
-                    _id: 0,
-                    date: '$_id',
-                    submittedResponses: 1,
+                { $sort: { _id: 1 } },
+            ]),
+            this.questionnaireResponseModel.aggregate([
+                { $match: { createdAt: { $gte: since } } },
+                {
+                    $group: {
+                        _id: {
+                            $dateToString: {
+                                format: '%Y-%m-%d',
+                                date: '$createdAt',
+                                timezone: this.dashboardTimezone
+                            }
+                        },
+                        count: { $sum: 1 },
+                    },
                 },
-            },
-        ]),
+                { $sort: { _id: 1 } },
+            ]),
+        ]).then(([symptomRows, questionnaireRows]) => {
+            const mergedCounts = new Map<string, number>();
+
+            for (const row of [...symptomRows, ...questionnaireRows]) {
+                mergedCounts.set(row._id, (mergedCounts.get(row._id) ?? 0) + row.count);
+            }
+
+            return Array.from(mergedCounts.entries())
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([date, submittedResponses]) => ({
+                    date,
+                    submittedResponses,
+                }));
+        }),
     ]);
 
     const merged: Record<string, any> = {};
 
     for (let i = 0; i <= days; i++) {
-        const d = new Date();
+        const d = this.getLocalDayStart();
         d.setDate(d.getDate() - (days - i));
-        const key = d.toISOString().split('T')[0];
+        const key = this.getDateKey(d);
 
         merged[key] = {
             date: key,
@@ -587,8 +676,85 @@ async getFollowupActivity(range: string) {
     // 6. HIGH RISK PATIENTS  (inchangé, correct)
     // ─────────────────────────────────────────────────────────────────────────
    async getHighRiskPatients() {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    return this.alertModel.aggregate([
+        {
+            $match: {
+                doctorId: { $nin: [null, ''] },
+            },
+        },
+        {
+            $group: {
+                _id: '$patient',
+                alertCount: { $sum: 1 },
+                unreadAlerts: {
+                    $sum: {
+                        $cond: [{ $eq: ['$isRead', false] }, 1, 0],
+                    },
+                },
+                highestSeverityValue: {
+                    $max: {
+                        $switch: {
+                            branches: [
+                                { case: { $eq: ['$severity', 'critical'] }, then: 100 },
+                                { case: { $eq: ['$severity', 'high'] }, then: 90 },
+                                { case: { $eq: ['$severity', 'medium'] }, then: 75 },
+                                { case: { $eq: ['$severity', 'low'] }, then: 60 },
+                            ],
+                            default: 0,
+                        },
+                    },
+                },
+                lastAlertDate: { $max: '$createdAt' },
+                doctors: { $addToSet: '$doctorId' },
+            },
+        },
+        {
+            $lookup: {
+                from: 'users',
+                localField: '_id',
+                foreignField: '_id',
+                as: 'patient',
+            },
+        },
+        { $unwind: '$patient' },
+        {
+            $match: {
+                'patient.actif': true,
+            },
+        },
+        {
+            $project: {
+                _id: '$patient._id',
+                firstName: '$patient.firstName',
+                lastName: '$patient.lastName',
+                assignedDepartment: '$patient.assignedDepartment',
+                riskScore: '$highestSeverityValue',
+                severity: {
+                    $switch: {
+                        branches: [
+                            { case: { $gte: ['$highestSeverityValue', 100] }, then: 'critical' },
+                            { case: { $gte: ['$highestSeverityValue', 90] }, then: 'high' },
+                            { case: { $gte: ['$highestSeverityValue', 75] }, then: 'medium' },
+                        ],
+                        default: 'low',
+                    },
+                },
+                alertCount: 1,
+                unreadAlerts: 1,
+                lastAlertDate: 1,
+                doctorsNotified: { $size: '$doctors' },
+            },
+        },
+        {
+            $sort: {
+                riskScore: -1,
+                unreadAlerts: -1,
+                lastAlertDate: -1,
+            },
+        },
+    ]);
+
+    const sevenDaysAgo = this.getDaysAgoStart(7);
 
     return this.userModel.aggregate([
 
@@ -819,7 +985,11 @@ async getGlobalFollowupRate() {
                 this.userModel.countDocuments({ actif: true }),
                 this.userModel.countDocuments({
                     actif: true,
-                    lastLogin: { $lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+                    $or: [
+                        { lastLogin: { $lt: this.getDaysAgoStart(7) } },
+                        { lastLogin: null },
+                        { lastLogin: { $exists: false } },
+                    ],
                 }),
                 this.serviceModel.countDocuments({ statut: 'INACTIF' }),
                 // ✅ AJOUT : alerte validations en attente
@@ -959,10 +1129,31 @@ Return ONLY valid JSON:
     // 12. INACTIVE PATIENTS  (inchangé, correct)
     // ─────────────────────────────────────────────────────────────────────────
     async getInactivePatients() {
+        const allRoles = await this.roleModel.find().select('_id name').lean().exec();
+        const patientRoles = allRoles.filter(
+            r => r.name.trim().toLowerCase() === 'patient'
+        );
+        const patientRoleIds = patientRoles.map(r => new Types.ObjectId(r._id.toString()));
+        const patientRoleNames = patientRoles.map(r => r.name);
+    const sevenDaysAgo = this.getDaysAgoStart(7);
+
         return this.userModel
             .find({
                 actif: true,
-                lastLogin: { $lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+                $or: [
+                    { role: { $in: patientRoleIds } },
+                    { role: { $in: patientRoleNames } },
+                    { role: { $regex: '^patient$', $options: 'i' } },
+                ],
+                $and: [
+                    {
+                        $or: [
+                            { lastLogin: { $lt: sevenDaysAgo } },
+                            { lastLogin: null },
+                            { lastLogin: { $exists: false } },
+                        ],
+                    },
+                ],
             })
             .select('firstName lastName email assignedDepartment lastLogin')
             .lean();
