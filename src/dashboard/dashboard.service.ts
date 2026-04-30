@@ -47,6 +47,29 @@ export class DashboardService {
         return date;
     }
 
+    private getDaysAgoExact(days: number, from = new Date()) {
+        return new Date(from.getTime() - days * 24 * 60 * 60 * 1000);
+    }
+
+    private getInactiveSinceFilter(cutoff: Date) {
+        return {
+            $or: [
+                { lastLogin: { $lt: cutoff } },
+                {
+                    $and: [
+                        {
+                            $or: [
+                                { lastLogin: null },
+                                { lastLogin: { $exists: false } },
+                            ],
+                        },
+                        { createdAt: { $lt: cutoff } },
+                    ],
+                },
+            ],
+        };
+    }
+
     private getDateKey(date: Date) {
         return date.toLocaleDateString('en-CA', {
             timeZone: this.dashboardTimezone,
@@ -61,7 +84,7 @@ async getSummary() {
     const weekAgo = new Date(now);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const sevenDaysAgo = this.getDaysAgoStart(7);
+    const sevenDaysAgo = this.getDaysAgoExact(7);
 
     const todayStart = this.getLocalDayStart();
 
@@ -88,13 +111,7 @@ async getSummary() {
     const doctorFilter = getRoleFilter('doctor');
     const nurseFilter = getRoleFilter('nurse');
     const coordinatorFilter = getRoleFilter('coordinator');
-    const inactiveSinceFilter = {
-        $or: [
-            { lastLogin: { $lt: sevenDaysAgo } },
-            { lastLogin: null },
-            { lastLogin: { $exists: false } },
-        ],
-    };
+    const inactiveSinceFilter = this.getInactiveSinceFilter(sevenDaysAgo);
 
     const [
         totalPatients,
@@ -754,7 +771,7 @@ async getFollowupActivity(range: string) {
         },
     ]);
 
-    const sevenDaysAgo = this.getDaysAgoStart(7);
+    const sevenDaysAgo = this.getDaysAgoExact(7);
 
     return this.userModel.aggregate([
 
@@ -979,16 +996,32 @@ async getGlobalFollowupRate() {
     async getAlerts() {
         type Alert = { type: string; message: string; severity: 'LOW' | 'MEDIUM' | 'HIGH' };
         const alerts: Alert[] = [];
+        const allRoles = await this.roleModel.find().select('_id name').lean().exec();
+        const patientRoles = allRoles.filter(
+            r => r.name.trim().toLowerCase() === 'patient'
+        );
 
         const [totalPatients, inactivePatients, inactiveServices, pendingValidations] =
             await Promise.all([
-                this.userModel.countDocuments({ actif: true }),
                 this.userModel.countDocuments({
                     actif: true,
                     $or: [
-                        { lastLogin: { $lt: this.getDaysAgoStart(7) } },
-                        { lastLogin: null },
-                        { lastLogin: { $exists: false } },
+                        { role: { $in: patientRoles.map(r => new Types.ObjectId(r._id.toString())) } },
+                        { role: { $in: patientRoles.map(r => r.name) } },
+                        { role: { $regex: '^patient$', $options: 'i' } },
+                    ],
+                }),
+                this.userModel.countDocuments({
+                    actif: true,
+                    $and: [
+                        {
+                            $or: [
+                                { role: { $in: patientRoles.map(r => new Types.ObjectId(r._id.toString())) } },
+                                { role: { $in: patientRoles.map(r => r.name) } },
+                                { role: { $regex: '^patient$', $options: 'i' } },
+                            ],
+                        },
+                        this.getInactiveSinceFilter(this.getDaysAgoExact(7)),
                     ],
                 }),
                 this.serviceModel.countDocuments({ statut: 'INACTIF' }),
@@ -1135,7 +1168,7 @@ Return ONLY valid JSON:
         );
         const patientRoleIds = patientRoles.map(r => new Types.ObjectId(r._id.toString()));
         const patientRoleNames = patientRoles.map(r => r.name);
-    const sevenDaysAgo = this.getDaysAgoStart(7);
+    const sevenDaysAgo = this.getDaysAgoExact(7);
 
         return this.userModel
             .find({
@@ -1146,13 +1179,7 @@ Return ONLY valid JSON:
                     { role: { $regex: '^patient$', $options: 'i' } },
                 ],
                 $and: [
-                    {
-                        $or: [
-                            { lastLogin: { $lt: sevenDaysAgo } },
-                            { lastLogin: null },
-                            { lastLogin: { $exists: false } },
-                        ],
-                    },
+                    this.getInactiveSinceFilter(sevenDaysAgo),
                 ],
             })
             .select('firstName lastName email assignedDepartment lastLogin')
