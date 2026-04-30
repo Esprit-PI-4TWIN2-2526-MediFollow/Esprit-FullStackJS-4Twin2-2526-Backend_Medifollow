@@ -178,7 +178,7 @@ export class PrescriptionService {
 
     await prescription.save();
 
-    // Envoyer notification au patient avec le PDF
+    // Send notification to patient with PDF
     const populatedPrescription = await this.prescriptionModel
       .findById(id)
       .populate('patient', 'firstName lastName email')
@@ -200,7 +200,7 @@ export class PrescriptionService {
         console.error('Error sending prescription notification:', error);
       }
 
-      // Créer notification in-app pour le patient
+      // Create in-app notification for patient
       try {
         const patient = populatedPrescription.patient as any;
         const doctor = populatedPrescription.doctor as any;

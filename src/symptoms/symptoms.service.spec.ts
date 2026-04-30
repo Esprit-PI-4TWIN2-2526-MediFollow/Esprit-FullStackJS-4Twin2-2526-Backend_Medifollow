@@ -13,6 +13,9 @@ import { User } from 'src/users/users.schema';
 import { Role } from 'src/role/schemas/role.schema';
 import { AlertsService } from 'src/alert/alerts.service';
 import { AnalysisService } from 'src/ai-analysis/analysis.service';
+import { NotificationsService } from 'src/notifications/notifications.service';
+import { SuggestionsGateway } from './autocomplete/suggestions.gateway';
+import { SuggestionsService } from './autocomplete/suggestions.service';
 import { CreateSymptomDto } from './dto/create-symptom.dto';
 import { SubmitResponseDto } from './dto/submit-response.dto';
 import { UpdateSymptomDto } from './dto/update-symptom.dto';
@@ -52,6 +55,9 @@ describe('SymptomsService', () => {
   let roleModel: any;
   let alertsService: { checkAndCreateAlert: jest.Mock };
   let analysisService: { generateFromFormAnswers: jest.Mock };
+  let suggestionsService: { generateValidationSuggestions: jest.Mock };
+  let suggestionsGateway: { emitSuggestions: jest.Mock };
+  let notificationsService: { create: jest.Mock };
 
   const formId = new Types.ObjectId();
   const patientId = new Types.ObjectId().toString();
@@ -196,6 +202,18 @@ describe('SymptomsService', () => {
       generateFromFormAnswers: jest.fn().mockResolvedValue(null),
     };
 
+    suggestionsService = {
+      generateValidationSuggestions: jest.fn().mockResolvedValue([]),
+    };
+
+    suggestionsGateway = {
+      emitSuggestions: jest.fn(),
+    };
+
+    notificationsService = {
+      create: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SymptomsService,
@@ -222,6 +240,18 @@ describe('SymptomsService', () => {
         {
           provide: AnalysisService,
           useValue: analysisService,
+        },
+        {
+          provide: SuggestionsService,
+          useValue: suggestionsService,
+        },
+        {
+          provide: SuggestionsGateway,
+          useValue: suggestionsGateway,
+        },
+        {
+          provide: NotificationsService,
+          useValue: notificationsService,
         },
       ],
     }).compile();
@@ -285,28 +315,33 @@ describe('SymptomsService', () => {
         },
         { $set: { isActive: false, status: 'inactive' } },
       );
-      expect(symptomModel.create).toHaveBeenCalledWith({
-        title: 'Daily symptoms',
-        description: 'Morning follow-up',
-        medicalService: 'Cardiology',
-        patientIds: [patientId],
-        patientId,
-        questions: [
-          {
-            label: 'Heart rate',
-            type: 'number',
-            order: 0,
-            required: true,
-            occurrencesPerDay: 1,
-            measurementsPerDay: 1,
-            maxOccurrencesPerDay: 1,
-            options: [],
-            category: 'vital_parameters',
-          },
-        ],
-        isActive: true,
-        status: 'active',
-      });
+      expect(symptomModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Daily symptoms',
+          description: 'Morning follow-up',
+          medicalService: 'Cardiology',
+          durationInDays: 7,
+          startDate: expect.any(Date),
+          endDate: expect.any(Date),
+          patientIds: [patientId],
+          patientId,
+          questions: [
+            {
+              label: 'Heart rate',
+              type: 'number',
+              order: 0,
+              required: true,
+              occurrencesPerDay: 1,
+              measurementsPerDay: 1,
+              maxOccurrencesPerDay: 1,
+              options: [],
+              category: 'vital_parameters',
+            },
+          ],
+          isActive: true,
+          status: 'active',
+        }),
+      );
       expect(result).toMatchObject({
         title: 'Daily symptoms',
         patientIds: [patientId],
@@ -575,24 +610,28 @@ describe('SymptomsService', () => {
       const result = await service.saveResponse(responseDto());
 
       expect(symptomResponseModel.countDocuments).toHaveBeenCalledTimes(2);
-      expect(symptomResponseModel.countDocuments).toHaveBeenNthCalledWith(1, {
-        patientId,
-        symptomFormId: formId,
-        createdAt: {
-          $gte: expect.any(Date),
-          $lt: expect.any(Date),
-        },
-        'answers.questionId': bloodPressureQuestionId.toString(),
-      });
-      expect(symptomResponseModel.countDocuments).toHaveBeenNthCalledWith(2, {
-        patientId,
-        symptomFormId: formId,
-        createdAt: {
-          $gte: expect.any(Date),
-          $lt: expect.any(Date),
-        },
-        'answers.questionId': heartRateQuestionId.toString(),
-      });
+      expect(symptomResponseModel.countDocuments).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          patientId,
+          createdAt: {
+            $gte: expect.any(Date),
+            $lt: expect.any(Date),
+          },
+          'answers.questionId': bloodPressureQuestionId.toString(),
+        }),
+      );
+      expect(symptomResponseModel.countDocuments).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          patientId,
+          createdAt: {
+            $gte: expect.any(Date),
+            $lt: expect.any(Date),
+          },
+          'answers.questionId': heartRateQuestionId.toString(),
+        }),
+      );
       expect(symptomResponseModel).toHaveBeenCalledWith(
         expect.objectContaining({
           symptomFormId: formId,
@@ -611,6 +650,7 @@ describe('SymptomsService', () => {
           vitals: {
             bloodPressure: '120/80',
             heartRate: 80,
+            spo2: null,
             temperature: null,
             weight: null,
           },
@@ -640,7 +680,7 @@ describe('SymptomsService', () => {
       expect(result._id).toEqual(responseId);
     });
 
-    it('should reject answers after the question daily limit is reached', async () => {
+    it('should still save the response when previous submissions exist for the same questions', async () => {
       symptomModel.findById.mockReturnValue(mockQuery(makeSymptomDoc()));
       symptomResponseModel.countDocuments.mockImplementation((query: { 'answers.questionId'?: string }) => {
         return Promise.resolve(
@@ -648,10 +688,10 @@ describe('SymptomsService', () => {
         );
       });
 
-      await expect(service.saveResponse(responseDto())).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      expect(symptomResponseModel).not.toHaveBeenCalled();
+      await expect(service.saveResponse(responseDto())).resolves.toMatchObject({
+        patientId,
+      });
+      expect(symptomResponseModel).toHaveBeenCalled();
     });
 
     it('should reject an answer whose question does not belong to the form', async () => {

@@ -52,7 +52,7 @@ export class ConsultationService {
       createdAt: new Date(),
     });
 
-    // Envoyer notification email au patient
+    // Send email notification to patient
     try {
       await this.notificationService.sendConsultationScheduled(
         patient.email,
@@ -65,7 +65,7 @@ export class ConsultationService {
       console.error('Error sending consultation notification:', error);
     }
 
-    // Créer notification in-app pour le patient
+    // Create in-app notification for patient
     try {
       await this.notificationsService.create({
         recipientId: dto.patientId,
@@ -223,10 +223,10 @@ export class ConsultationService {
       updateData.endedAt = new Date(dto.endedAt);
       updateData.status = 'completed';
 
-      // Calculer la durée
+      // Calculate duration
       const start = consultation.startedAt || consultation.scheduledAt;
       const end = new Date(dto.endedAt);
-      updateData.duration = Math.round((end.getTime() - start.getTime()) / 60000); // en minutes
+      updateData.duration = Math.round((end.getTime() - start.getTime()) / 60000); // in minutes
     }
 
     const updated = await this.consultationModel
@@ -239,7 +239,7 @@ export class ConsultationService {
       throw new NotFoundException(`Consultation ${id} not found after update`);
     }
 
-    // Envoyer résumé au patient si consultation terminée
+    // Send summary to patient if consultation completed
     if (dto.endedAt) {
       try {
         const patient = updated.patient as any;

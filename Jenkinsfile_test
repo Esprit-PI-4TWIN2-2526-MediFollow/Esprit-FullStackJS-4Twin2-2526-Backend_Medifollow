@@ -1,17 +1,11 @@
 pipeline {
     agent any
 
-    environment {
-        IMAGE_NAME = "yahyakaroui/medifollow-backend"
-        IMAGE_TAG = "${BUILD_NUMBER}"
-    }
-
     stages {
 
         stage('Checkout') {
             steps {
-                git branch: 'main',
-                url: 'https://github.com/Esprit-PI-4TWIN2-2526-MediFollow/Esprit-FullStackJS-4Twin2-2526-Backend_Medifollow.git'
+                git branch: 'main', url: 'https://github.com/Esprit-PI-4TWIN2-2526-MediFollow/Esprit-FullStackJS-4Twin2-2526-Backend_Medifollow.git'
             }
         }
 
@@ -24,9 +18,8 @@ pipeline {
                 )]) {
                     sh '''
                     echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-
-                    docker build -t $IMAGE_NAME:$IMAGE_TAG .
-                    docker push $IMAGE_NAME:$IMAGE_TAG
+                    docker build -t yahyakaroui/medifollow-backend:${BUILD_NUMBER} .
+                    docker push yahyakaroui/medifollow-backend:${BUILD_NUMBER}
                     '''
                 }
             }
@@ -35,12 +28,18 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
+                export KUBECONFIG=$HOME/.kube/config
                 kubectl set image deployment/medifollow-backend \
-                medifollow-backend=$IMAGE_NAME:$IMAGE_TAG \
-                -n default
+                medifollow-backend=yahyakaroui/medifollow-backend:${BUILD_NUMBER}
 
-                kubectl rollout status deployment/medifollow-backend -n default
+                kubectl rollout restart deployment medifollow-backend
                 '''
+            }
+        }
+
+        stage('Verify') {
+            steps {
+                sh 'kubectl get pods'
             }
         }
     }
