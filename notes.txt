@@ -81,7 +81,7 @@ yahyakaroui4TWIN233
 git push origin main
 
 
-qsdqscdvs7410sdfsdfsdfsdf
+qsdqscdvs7410sdfsdfsdfsdfazertyuizeffzefefsfzefzekjkjjdezdesfsefs
 -------------------------------------------------------
 
 // Commande Merge Main --> ta branche 
@@ -95,7 +95,7 @@ git fetch origin
 git merge origin/main
 
 git push origin ta_branche
-yahya
+yahya kr
 
 //pour statistique installez:
 npm install chart.js ng2-charts@5 --legacy-peer-deps
@@ -109,7 +109,7 @@ sdfqsdqsd
 npm install @nestjs/axios axios
 
 
-yahya
+yahyakr
 
 
 

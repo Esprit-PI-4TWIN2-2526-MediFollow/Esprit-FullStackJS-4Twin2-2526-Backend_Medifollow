@@ -12,7 +12,7 @@ export type QuestionType =
   | 'date'
   | 'boolean';
 
-@Schema({ _id: true })
+@Schema({ _id: true ,timestamps: true })
 export class Question {
 
   @Prop({ required: true })

@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 
 @Controller('dashboard')
@@ -69,4 +69,9 @@ export class DashboardController {
   async getServicesOverview() {
     return this.dashboardService.getServicesOverview();
   }
+  @Post('ai-assistant')
+async askAssistant(@Body('question') question: string) {
+  return this.dashboardService.askDashboardAI(question);
+}
+
 }

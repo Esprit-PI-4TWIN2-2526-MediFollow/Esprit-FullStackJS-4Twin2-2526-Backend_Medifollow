@@ -18,7 +18,7 @@ export type QuestionCategory =
   | 'patient_context'
   | 'clinical_data';
 
-@Schema({ _id: true })
+@Schema({ _id: true ,timestamps: true})
 export class Question {
   _id?: Types.ObjectId;
 

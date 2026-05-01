@@ -51,10 +51,14 @@ pipeline {
         }
 
         stage('Trigger CD Pipeline') {
-            steps {
-                build job: 'Medifollow-Backend_CD', wait: false
-            }
-        }
+    steps {
+        build job: 'Medifollow-Backend_CD',
+              wait: false,
+              parameters: [
+                  string(name: 'DOCKER_IMAGE_TAG', value: "${BUILD_NUMBER}")
+              ]
+    }
+}
 
     }
 }

@@ -3,17 +3,17 @@ kind: Deployment
 metadata:
   name: medifollow-backend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
-      app: backend
+      app: medifollow-backend
   template:
     metadata:
       labels:
-        app: backend
+        app: medifollow-backend
     spec:
       containers:
-        - name: backend
-          image: yahyakaroui/medifollow-backend:latest
-          ports:
-            - containerPort: 3000
+      - name: medifollow-backend
+        image: yahyakaroui/medifollow-backend:latest
+        ports:
+        - containerPort: 3000
