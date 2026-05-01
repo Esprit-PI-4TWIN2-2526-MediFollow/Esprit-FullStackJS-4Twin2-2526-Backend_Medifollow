@@ -17,3 +17,8 @@ spec:
         image: yahyakaroui/medifollow-backend:latest
         ports:
         - containerPort: 3000
+
+        # 🔥 AJOUT CRUCIAL
+        envFrom:
+          - secretRef:
+              name: backend-env
