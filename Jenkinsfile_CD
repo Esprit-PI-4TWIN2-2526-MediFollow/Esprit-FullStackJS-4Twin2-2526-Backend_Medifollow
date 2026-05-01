@@ -33,15 +33,23 @@ pipeline {
         }
 
         stage('Deploy to Kubernetes') {
-            steps {
-                sh '''
-                kubectl set image deployment/medifollow-backend \
-                medifollow-backend=$IMAGE_NAME:$IMAGE_TAG \
-                -n default
+    steps {
+        sh '''
+        export KUBECONFIG=/var/jenkins_home/.kube/config
 
-                kubectl rollout status deployment/medifollow-backend -n default
-                '''
-            }
-        }
+        # créer / mettre à jour les ressources
+        kubectl apply -f deployment.yaml
+        kubectl apply -f service.yaml
+
+        # mettre à jour l'image
+        kubectl set image deployment/medifollow-backend \
+        medifollow-backend=$IMAGE_NAME:$IMAGE_TAG \
+        -n default
+
+        # attendre le déploiement
+        kubectl rollout status deployment/medifollow-backend -n default
+        '''
+    }
+}
     }
 }
