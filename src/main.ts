@@ -11,18 +11,20 @@ import { IdDecoderInterceptor } from './common/interceptors/id-decoder.intercept
  * Disable console.log in production for better performance
  * Keeps console.error and console.warn for monitoring
  * MUST BE EXECUTED BEFORE ANY OTHER CODE
+ * 
+ * TEMPORARILY DISABLED FOR DEBUGGING
  */
-if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEBUG_LOGS !== 'true') {
-  // Disable all console methods except error and warn
-  console.log = () => {};
-  console.debug = () => {};
-  console.info = () => {};
+// if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEBUG_LOGS !== 'true') {
+//   // Disable all console methods except error and warn
+//   console.log = () => {};
+//   console.debug = () => {};
+//   console.info = () => {};
   
-  // Also disable NestJS default logger for log/debug/verbose levels
-  Logger.overrideLogger(['error', 'warn']);
+//   // Also disable NestJS default logger for log/debug/verbose levels
+//   Logger.overrideLogger(['error', 'warn']);
   
-  // Keep console.error and console.warn for production monitoring
-}
+//   // Keep console.error and console.warn for production monitoring
+// }
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -43,6 +45,12 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
+
+  // Increase server timeout for ML service calls (120 seconds)
+  const server = app.getHttpServer();
+  server.timeout = 120000; // 120 seconds
+  server.keepAliveTimeout = 120000;
+  server.headersTimeout = 125000; // Slightly higher than keepAliveTimeout
 
   // Limiter nb itérations pour prévenir les attaques par force brute
   app.use(

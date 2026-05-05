@@ -110,8 +110,20 @@ export class SymptomsController {
 
   @Get('nurse/responses/:id')
   @UseGuards(JwtAuthGuard)
-  getNurseResponseById(@Param('id') id: string, @Req() req) {
-    return this.service.getNurseResponseById(req.user, id);
+  async getNurseResponseById(@Param('id') id: string, @Req() req) {
+    console.log(`\n========== CONTROLLER: GET NURSE RESPONSE ==========`);
+    console.log(`[Controller] Received request for response ID: ${id}`);
+    console.log(`[Controller] User:`, req.user?.sub || req.user?.userId);
+    
+    try {
+      const result = await this.service.getNurseResponseById(req.user, id);
+      console.log(`[Controller] ✅ Successfully retrieved response`);
+      return result;
+    } catch (error) {
+      console.error(`[Controller] ❌ Error retrieving response:`, error.message);
+      console.error(`[Controller] Error type:`, error.constructor.name);
+      throw error;
+    }
   }
 
   @Get('coordinator/responses')
@@ -134,8 +146,20 @@ export class SymptomsController {
 
   @Get('coordinator/responses/:id')
   @UseGuards(JwtAuthGuard)
-  getCoordinatorResponseById(@Param('id') id: string, @Req() req) {
-    return this.service.getCoordinatorResponseById(req.user, id);
+  async getCoordinatorResponseById(@Param('id') id: string, @Req() req) {
+    console.log(`\n========== CONTROLLER: GET COORDINATOR RESPONSE ==========`);
+    console.log(`[Controller] Received request for response ID: ${id}`);
+    console.log(`[Controller] User:`, req.user?.sub || req.user?.userId);
+    
+    try {
+      const result = await this.service.getCoordinatorResponseById(req.user, id);
+      console.log(`[Controller] ✅ Successfully retrieved response`);
+      return result;
+    } catch (error) {
+      console.error(`[Controller] ❌ Error retrieving response:`, error.message);
+      console.error(`[Controller] Error type:`, error.constructor.name);
+      throw error;
+    }
   }
 
   @Patch('response/:id/validate')

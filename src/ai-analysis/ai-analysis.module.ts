@@ -9,7 +9,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 @Module({
   imports: [
     HttpModule.register({
-      timeout: 60000, // 60 seconds for cold starts on Render free tier
+      timeout: 90000, // 90 seconds for cold starts on Render free tier
       maxRedirects: 5,
     }),
      MongooseModule.forFeature([{ name: Analysis.name, schema: AnalysisSchema }]),

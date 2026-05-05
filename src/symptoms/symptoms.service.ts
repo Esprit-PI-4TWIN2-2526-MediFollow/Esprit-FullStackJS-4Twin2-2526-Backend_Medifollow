@@ -1977,32 +1977,82 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
     responseId: string,
     department: string | null,
   ): Promise<SymptomResponseDocument> {
+    console.log(`[findVisibleResponse] ========== START ==========`);
     console.log(`[findVisibleResponse] Looking for response: ${responseId}`);
     console.log(`[findVisibleResponse] Department: ${department}`);
     console.log(`[findVisibleResponse] Is valid ObjectId: ${isValidObjectId(responseId)}`);
     
     if (!responseId || !isValidObjectId(responseId)) {
-      console.error(`[findVisibleResponse] Invalid ID format: ${responseId}`);
-      throw new BadRequestException('Invalid symptom response id');
+      console.error(`[findVisibleResponse] ❌ Invalid ID format: ${responseId}`);
+      throw new BadRequestException(`Invalid symptom response id format: ${responseId}`);
     }
 
-    const response = await this.symptomResponseModel
-      .findById(responseId)
-      .populate('symptomFormId')
-      .exec();
+    try {
+      console.log(`[findVisibleResponse] 🔍 Querying database for ID: ${responseId}`);
+      
+      // Add timeout to prevent 504 errors
+      const response = await Promise.race([
+        this.symptomResponseModel
+          .findById(responseId)
+          .populate('symptomFormId')
+          .exec(),
+        new Promise<null>((_, reject) => 
+          setTimeout(() => reject(new Error('Database query timeout')), 10000)
+        )
+      ]);
 
-    if (!response) {
-      console.error(`[findVisibleResponse] Response not found in database: ${responseId}`);
-      console.log(`[findVisibleResponse] Checking if any responses exist...`);
-      const count = await this.symptomResponseModel.countDocuments();
-      console.log(`[findVisibleResponse] Total responses in DB: ${count}`);
-      throw new NotFoundException(`Symptom response ${responseId} not found`);
+      if (!response) {
+        console.error(`[findVisibleResponse] ❌ Response NOT FOUND in database: ${responseId}`);
+        console.log(`[findVisibleResponse] 📊 Checking total responses in DB...`);
+        
+        try {
+          const count = await this.symptomResponseModel.countDocuments().exec();
+          console.log(`[findVisibleResponse] 📊 Total responses in DB: ${count}`);
+          
+          // List recent response IDs for debugging
+          const recentResponses = await this.symptomResponseModel
+            .find()
+            .select('_id createdAt')
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .lean()
+            .exec();
+          
+          console.log(`[findVisibleResponse] 📋 Recent response IDs:`);
+          recentResponses.forEach((r, i) => {
+            console.log(`   ${i + 1}. ${r._id} (created: ${r.createdAt})`);
+          });
+        } catch (countError) {
+          console.error(`[findVisibleResponse] ⚠️ Error counting responses:`, countError.message);
+        }
+        
+        throw new NotFoundException(`Symptom response not found. The response ID ${responseId} does not exist in the database. This may happen if you're viewing data from a different environment.`);
+      }
+
+      console.log(`[findVisibleResponse] ✅ Found response: ${response._id}`);
+      console.log(`[findVisibleResponse] 📅 Created at: ${response.createdAt}`);
+      console.log(`[findVisibleResponse] 👤 Patient ID: ${response.patientId}`);
+      
+      await this.getPatientForVisibleResponse(response, department);
+
+      console.log(`[findVisibleResponse] ========== SUCCESS ==========`);
+      return response;
+      
+    } catch (error) {
+      console.error(`[findVisibleResponse] ❌ Error during lookup:`, error.message);
+      
+      if (error instanceof NotFoundException || error instanceof BadRequestException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      
+      if (error.message === 'Database query timeout') {
+        console.error(`[findVisibleResponse] ⏱️ Database query timed out after 10 seconds`);
+        throw new InternalServerErrorException('Database query timeout. Please try again.');
+      }
+      
+      console.error(`[findVisibleResponse] ❌ Unexpected error:`, error);
+      throw new InternalServerErrorException(`Failed to retrieve symptom response: ${error.message}`);
     }
-
-    console.log(`[findVisibleResponse] Found response: ${response._id}`);
-    await this.getPatientForVisibleResponse(response, department);
-
-    return response;
   }
 
   private async getPatientForVisibleResponse(
