@@ -716,7 +716,7 @@ console.log(`✅ Réponse sauvegardée avec succès. ID: ${response._id}`);
             formTitle: symptomForm.title,
           },
           patientId: normalizedPatientId,
-          actionUrl: `/symptoms/responses/${response._id}`,
+          actionUrl: `/symptoms/view/${response._id}`,
         });
         console.log(`📬 Notification créée pour le médecin ${doctorId}`);
       }
