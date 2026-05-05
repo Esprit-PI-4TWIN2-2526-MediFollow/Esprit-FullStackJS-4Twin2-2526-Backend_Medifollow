@@ -1977,7 +1977,12 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
     responseId: string,
     department: string | null,
   ): Promise<SymptomResponseDocument> {
+    console.log(`[findVisibleResponse] Looking for response: ${responseId}`);
+    console.log(`[findVisibleResponse] Department: ${department}`);
+    console.log(`[findVisibleResponse] Is valid ObjectId: ${isValidObjectId(responseId)}`);
+    
     if (!responseId || !isValidObjectId(responseId)) {
+      console.error(`[findVisibleResponse] Invalid ID format: ${responseId}`);
       throw new BadRequestException('Invalid symptom response id');
     }
 
@@ -1987,9 +1992,14 @@ Return raw JSON array only using [{"question":"...","type":"..."}].
       .exec();
 
     if (!response) {
+      console.error(`[findVisibleResponse] Response not found in database: ${responseId}`);
+      console.log(`[findVisibleResponse] Checking if any responses exist...`);
+      const count = await this.symptomResponseModel.countDocuments();
+      console.log(`[findVisibleResponse] Total responses in DB: ${count}`);
       throw new NotFoundException(`Symptom response ${responseId} not found`);
     }
 
+    console.log(`[findVisibleResponse] Found response: ${response._id}`);
     await this.getPatientForVisibleResponse(response, department);
 
     return response;

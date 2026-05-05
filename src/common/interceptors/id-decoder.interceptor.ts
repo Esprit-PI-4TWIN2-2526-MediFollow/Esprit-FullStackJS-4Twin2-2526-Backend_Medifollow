@@ -24,12 +24,23 @@ export class IdDecoderInterceptor implements NestInterceptor {
 
     const request = context.switchToHttp().getRequest();
     
+    // Log the incoming request for debugging
+    console.log(`[ID Decoder] ${request.method} ${request.url}`);
+    
     // Decode IDs in URL parameters
     if (request.params) {
       Object.keys(request.params).forEach(key => {
         if (this.isIdParameter(key) && request.params[key]) {
-          const decoded = IdEncryptionUtil.decodeId(request.params[key]);
-          request.params[key] = decoded;
+          const original = request.params[key];
+          try {
+            const decoded = IdEncryptionUtil.decodeId(original);
+            console.log(`[ID Decoder] Decoded ${key}: ${original.substring(0, 20)}... → ${decoded}`);
+            request.params[key] = decoded;
+          } catch (error) {
+            console.error(`[ID Decoder] Failed to decode ${key}: ${original}`, error.message);
+            // If decoding fails, assume it's already a plain ID
+            // This handles cases where IDs might not be encrypted
+          }
         }
       });
     }
@@ -38,8 +49,15 @@ export class IdDecoderInterceptor implements NestInterceptor {
     if (request.query) {
       Object.keys(request.query).forEach(key => {
         if (this.isIdParameter(key) && request.query[key]) {
-          const decoded = IdEncryptionUtil.decodeId(request.query[key]);
-          request.query[key] = decoded;
+          const original = request.query[key];
+          try {
+            const decoded = IdEncryptionUtil.decodeId(original);
+            console.log(`[ID Decoder] Decoded query ${key}: ${original.substring(0, 20)}... → ${decoded}`);
+            request.query[key] = decoded;
+          } catch (error) {
+            console.error(`[ID Decoder] Failed to decode query ${key}: ${original}`, error.message);
+            // If decoding fails, assume it's already a plain ID
+          }
         }
       });
     }
